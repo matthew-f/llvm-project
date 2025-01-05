@@ -1,0 +1,42 @@
+set(LLVM_LINK_COMPONENTS support)
+
+add_clang_library(clangTidyCathexisModule
+  AbseilWrappersCheck.cpp
+  BannedCFunctionsCheck.cpp
+  BugproneBufDataCheck.cpp
+  CathexisTidyModule.cpp
+  NamingConventionsCheck.cpp
+  PackedStructMissingSizeCheckCheck.cpp
+  ProtectedClassMemberCheck.cpp
+  QtNoDateTimeToStringCheck.cpp
+  QtNolatin1Check.cpp
+  QtNoQfiledialogStaticMethodsCheck.cpp
+  QtTrWithoutQobjectCheck.cpp
+  QualityConstCastCheck.cpp
+  QualityContainersCheck.cpp
+  QualityDeprecatedCheck.cpp
+  QualityEnumCheck.cpp
+  QualityEnumToStringCheck.cpp
+  QualityLoggingCheck.cpp
+  QualityNoNakedNewCheck.cpp
+  QualityPackedStructuresCheck.cpp
+  QualityQtAvoidQdialogExecCheck.cpp
+  QualityReviewCheck.cpp
+  QualityUseGbufviewCheck.cpp
+  QualityUseNodiscardCheck.cpp
+  QualityXmlSuspiciousFindoraddCheck.cpp
+  RefactorXmlConvertFindoraddToUpdateCheck.cpp
+  RefactorXmlRenameUpdateCheck.cpp
+  RefactorXmlUseFindoraddCheck.cpp
+  UseAnonymousDefCheck.cpp
+  UseNodiscardCheck.cpp
+  WrapperCheck.cpp
+
+  LINK_LIBS
+  clangAST
+  clangASTMatchers
+  clangBasic
+  clangLex
+  clangTidy
+  clangTidyUtils
+  )

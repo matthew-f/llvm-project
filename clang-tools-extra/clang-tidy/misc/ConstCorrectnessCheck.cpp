@@ -174,7 +174,7 @@ void ConstCorrectnessCheck::check(const MatchFinder::MatchResult &Result) {
   if (VC == VariableCategory::Value && TransformValues) {
     Diag << addQualifierToVarDecl(*Variable, *Result.Context, Qualifiers::Const,
                                   QualifierTarget::Value,
-                                  QualifierPolicy::Right);
+                                  QualifierPolicy::Left);
     // FIXME: Add '{}' for default initialization if no user-defined default
     // constructor exists and there is no initializer.
     return;
@@ -183,7 +183,7 @@ void ConstCorrectnessCheck::check(const MatchFinder::MatchResult &Result) {
   if (VC == VariableCategory::Reference && TransformReferences) {
     Diag << addQualifierToVarDecl(*Variable, *Result.Context, Qualifiers::Const,
                                   QualifierTarget::Value,
-                                  QualifierPolicy::Right);
+                                  QualifierPolicy::Left);
     return;
   }
 
@@ -191,7 +191,7 @@ void ConstCorrectnessCheck::check(const MatchFinder::MatchResult &Result) {
     if (WarnPointersAsValues && TransformPointersAsValues) {
       Diag << addQualifierToVarDecl(*Variable, *Result.Context,
                                     Qualifiers::Const, QualifierTarget::Value,
-                                    QualifierPolicy::Right);
+                                    QualifierPolicy::Left);
     }
     return;
   }

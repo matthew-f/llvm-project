@@ -17,6 +17,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include <algorithm>
+#include <iostream>
 #include <string>
 
 using namespace clang::ast_matchers;
@@ -67,24 +68,98 @@ AST_MATCHER_P2(Expr, hasSideEffect, bool, CheckFunctionCalls,
           IgnoredFunctionsMatcher.matches(*FuncDecl, Finder,
                                           Builder)) // exceptions come here
         return false;
+
       for (size_t I = 0; I < FuncDecl->getNumParams(); I++) {
         const ParmVarDecl *P = FuncDecl->getParamDecl(I);
         const Expr *ArgExpr =
             I < CExpr->getNumArgs() ? CExpr->getArg(I) : nullptr;
         const QualType PT = P->getType().getCanonicalType();
+
         if (ArgExpr && !ArgExpr->isXValue() && PT->isReferenceType() &&
-            !PT.getNonReferenceType().isConstQualified())
+            !PT.getNonReferenceType().isConstQualified()) {
+
+          // std::cout << "triggered by arg to function "
+          //           << FuncDecl->getNameAsString() << ": "
+          //           << P->getNameAsString() << "\n";
+
           return true;
+        }
+
+        if (PT.getTypePtr()->isPointerType() &&
+            PT.getAsString().substr(0, 5) != "const") {
+
+          // I can't work out how to check if the pointed to data is const. The
+          // above string check is the best I can do
+          // std::cout << "triggered by pointer arg to function "
+          //           << FuncDecl->getNameAsString() << ": "
+          //           << P->getNameAsString()
+          //           << " with qualifiers: " << PT.getAsString() << "\n";
+
+          // If the parameter has a default arg then reject it. A pointer with
+          // default arg is likely a nullptr. Not 100% sure this checks if the
+          // call site used the default arg
+          if (P->hasDefaultArg()) {
+            return false;
+          }
+          return true;
+        }
       }
-      if (const auto *MethodDecl = dyn_cast<CXXMethodDecl>(FuncDecl))
-        return !MethodDecl->isConst();
+
+      // std::cout << "checking function " << FuncDecl->getNameAsString() <<
+      // "\n";
+
+      if (FuncDecl->isConstexpr()) {
+        return false;
+      }
+
+      if (const auto *MethodDecl = dyn_cast<CXXMethodDecl>(FuncDecl)) {
+        if (MethodDecl->isConst() || MethodDecl->isStatic() ||
+            MethodDecl->isConstexpr()) {
+          return false;
+        }
+
+        // Check for const version of method
+        const auto *record = MethodDecl->getParent();
+        for (const auto *m : record->methods()) {
+          if (m->isConst() &&
+              m->getNameAsString() == MethodDecl->getNameAsString()) {
+            // std::cout << " - Found a const version of the method "
+            //           << m->getParent()->getNameAsString()
+            //           << "::" << MethodDecl->getNameAsString() << "\n";
+            return false;
+          }
+        }
+
+        // Check for const template method
+        for (auto const *inner : record->decls()) {
+          auto const *mft = llvm::dyn_cast<clang::FunctionTemplateDecl>(inner);
+          if (mft == nullptr)
+            continue;
+
+          const FunctionDecl *f = mft->getAsFunction();
+          if (f != nullptr) {
+            const auto *mf = llvm::dyn_cast<CXXMethodDecl>(f);
+            if (mf != nullptr) {
+              if (mf->isConst() &&
+                  mf->getNameAsString() == MethodDecl->getNameAsString()) {
+                // std::cout << " - Found a const version of the template method
+                // "
+                //           << mf->getParent()->getNameAsString()
+                //           << "::" << MethodDecl->getNameAsString() << "\n";
+                return false;
+              }
+            }
+          }
+        }
+
+        return true;
+      }
     }
-    return true;
+    return false;
   }
 
   return isa<CXXNewExpr>(E) || isa<CXXDeleteExpr>(E) || isa<CXXThrowExpr>(E);
 }
-
 } // namespace
 
 AssertSideEffectCheck::AssertSideEffectCheck(StringRef Name,
