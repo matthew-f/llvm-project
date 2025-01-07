@@ -38,7 +38,12 @@ static int LLVM_ATTRIBUTE_UNUSED BoostModuleAnchorDestination =
 extern volatile int BugproneModuleAnchorSource;
 static int LLVM_ATTRIBUTE_UNUSED BugproneModuleAnchorDestination =
     BugproneModuleAnchorSource;
-
+    
+// This anchor is used to force the linker to link the CathexisModule.
+extern volatile int CathexisModuleAnchorSource;
+static int LLVM_ATTRIBUTE_UNUSED CathexisModuleAnchorDestination =
+    CathexisModuleAnchorSource;
+    
 // This anchor is used to force the linker to link the CERTModule.
 extern volatile int CERTModuleAnchorSource;
 static int LLVM_ATTRIBUTE_UNUSED CERTModuleAnchorDestination =
