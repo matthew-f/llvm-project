@@ -21,12 +21,10 @@
 #include "QtNoQfiledialogStaticMethodsCheck.h"
 #include "QtNolatin1Check.h"
 #include "QtTrWithoutQobjectCheck.h"
-#include "QualityConstCastCheck.h"
 #include "QualityContainersCheck.h"
 #include "QualityDeprecatedCheck.h"
 #include "QualityEnumCheck.h"
 #include "QualityLoggingCheck.h"
-#include "QualityNoNakedNewCheck.h"
 #include "QualityPackedStructuresCheck.h"
 #include "QualityQtAvoidQdialogExecCheck.h"
 #include "QualityReviewCheck.h"
@@ -68,8 +66,6 @@ public:
         "cathexis-qt-no-qfiledialog-static-methods");
     CheckFactories.registerCheck<QtTrWithoutQobjectCheck>(
         "cathexis-qt-tr-without-qobject");
-    CheckFactories.registerCheck<QualityConstCastCheck>(
-        "cathexis-quality-const-cast");
     CheckFactories.registerCheck<QualityContainersCheck>(
         "cathexis-quality-containers");
     CheckFactories.registerCheck<QualityDeprecatedCheck>(
@@ -77,8 +73,6 @@ public:
     CheckFactories.registerCheck<QualityEnumCheck>("cathexis-quality-enum");
     CheckFactories.registerCheck<QualityLoggingCheck>(
         "cathexis-quality-logging");
-    CheckFactories.registerCheck<QualityNoNakedNewCheck>(
-        "cathexis-quality-no-naked-new");
     CheckFactories.registerCheck<QualityPackedStructuresCheck>(
         "cathexis-quality-packed-structures");
     CheckFactories.registerCheck<QualityQtAvoidQdialogExecCheck>(

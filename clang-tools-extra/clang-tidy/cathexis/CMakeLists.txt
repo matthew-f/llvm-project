@@ -12,13 +12,11 @@ add_clang_library(clangTidyCathexisModule
   QtNolatin1Check.cpp
   QtNoQfiledialogStaticMethodsCheck.cpp
   QtTrWithoutQobjectCheck.cpp
-  QualityConstCastCheck.cpp
   QualityContainersCheck.cpp
   QualityDeprecatedCheck.cpp
   QualityEnumCheck.cpp
   QualityEnumToStringCheck.cpp
   QualityLoggingCheck.cpp
-  QualityNoNakedNewCheck.cpp
   QualityPackedStructuresCheck.cpp
   QualityQtAvoidQdialogExecCheck.cpp
   QualityReviewCheck.cpp
