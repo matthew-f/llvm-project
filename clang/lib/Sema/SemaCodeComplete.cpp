@@ -137,7 +137,7 @@ private:
 
     ~ShadowMapEntry() {
       if (DeclIndexPairVector *Vec =
-              DeclOrVector.dyn_cast<DeclIndexPairVector *>()) {
+              dyn_cast_if_present<DeclIndexPairVector *>(DeclOrVector)) {
         delete Vec;
         DeclOrVector = ((NamedDecl *)nullptr);
       }
@@ -678,7 +678,7 @@ public:
   }*/
 
   reference operator*() const {
-    if (const NamedDecl *ND = DeclOrIterator.dyn_cast<const NamedDecl *>())
+    if (const NamedDecl *ND = dyn_cast<const NamedDecl *>(DeclOrIterator))
       return reference(ND, SingleDeclIndex);
 
     return *cast<const DeclIndexPair *>(DeclOrIterator);
