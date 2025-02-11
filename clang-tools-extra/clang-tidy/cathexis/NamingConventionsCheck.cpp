@@ -84,78 +84,80 @@ NamingConventionsCheck::NamingConventionsCheck(StringRef Name,
 //----------------------------------------------------------------------//
 void NamingConventionsCheck::registerMatchers(MatchFinder *Finder) {
 
-  // Global functions should be capitalised
+  // Functions
   Finder->addMatcher(
       functionDecl(
           unless(
-              anyOf(cxxMethodDecl(),                       //
-                    hasName("take_ownership"),             // core_owner
-                    hasName("make_owned"),                 // core_owner
-                    hasName("final"),                      // core_scopeguard
-                    hasName("narrow_cast"),                // core_templates
-                    hasName("make_array"),                 // core_stlutils
-                    hasName("in_numeric_limits"),          // core_stlutils
-                    hasName("check_size_equal"),           // core_includes
-                    hasName("check_size_less_or_equal"),   // core_includes
-                    hasName("from_strdump"),               // core_strconv
-                    hasName("from_strdump_or"),            // core_strconv
-                    hasName("to_strdump"),                 // core_strconv
-                    hasName("make_unique_qptr"),           // qt_uniqueqptr
-                    hasName("swap"),                       //
-                    hasName("__builtin_trap"),             //
-                    hasName("__builtin_memcpy"),           //
-                    hasName("qt_getEnumMetaObject"),       // Qt's Q_ENUM
-                    hasName("qt_getEnumName"),             // Qt's Q_ENUM
-                    hasName("qHash"),                      //
-                    hasName("RunCombineUnordered"),        //
-                    hasName("finally"),                    //
-                    hasName("ref_ptr"),                    //
-                    hasName("flat_hash_set_compare"),      //
-                    hasName("flat_hash_set_difference"),   //
-                    hasName("flat_hash_set_union"),        //
-                    hasName("flat_hash_set_intersection"), //
-                    hasName("to_string"),                  //
-                    hasName("from_string"),                //
-                    hasName("to_serial_estimate"),         //
-                    hasName("to_serial"),                  //
-                    hasName("write_buf_estimate"),         //
-                    hasName("write_buf_dump"),             //
-                    hasName("optional_out"),               //
-                    hasName("owning_ref_ptr"),             //
-                    hasName("has_ToStrDump"),              //
-                    hasName("has_FromStrDump"),            //
-                    hasName("to_strdump"),                 //
-                    hasName("from_strdump"),               //
+              anyOf(cxxMethodDecl(),                    //
+                    hasAnyName(                         //
+                        "RunCombineUnordered",          //
+                        "check_size_equal",             // core_includes
+                        "check_size_less_or_equal",     // core_includes
+                        "final",                        // core_scopeguard
+                        "finally",                      //
+                        "flat_hash_set_compare",        //
+                        "flat_hash_set_difference",     //
+                        "flat_hash_set_intersection",   //
+                        "flat_hash_set_union",          //
+                        "from_strdump",                 // core_strconv
+                        "from_strdump_or",              // core_strconv
+                        "from_string",                  //
+                        "has_FromStrDump",              //
+                        "has_ToStrDump",                //
+                        "in_numeric_limits",            // core_stlutils
+                        "make_array",                   // core_stlutils
+                        "make_owned",                   // core_owner
+                        "make_unique_qptr",             // qt_uniqueqptr
+                        "narrow_cast",                  // core_templates
+                        "optional_out",                 //
+                        "owning_ref_ptr",               //
+                        "qHash",                        //
+                        "qt_getEnumMetaObject",         // Qt's Q_ENUM
+                        "qt_getEnumName",               // Qt's Q_ENUM
+                        "ref_ptr",                      //
+                        "swap",                         //
+                        "take_ownership",               // core_owner
+                        "to_serial",                    //
+                        "to_serial_estimate",           //
+                        "to_strdump",                   //
+                        "to_strdump",                   // core_strconv
+                        "to_string",                    //
+                        "write_buf_dump",               //
+                        "write_buf_estimate"            //
+                        ),                              //
+                    matchesName("^::__builtin_.*"),     //
                     matchesName("^::qInitResources_.*") // Qt's Q_INIT_RESOURCE
                     )))
           .bind("func"),
       this);
 
-  // Member functions should not be capitalised
+  // Methods
   Finder->addMatcher(
       functionDecl(cxxMethodDecl(unless(
                        anyOf(cxxConstructorDecl(), cxxDestructorDecl()))))
           .bind("method"),
       this);
 
-  // Class and structure definitions should be capitalised
+  // Classes/Structures
   Finder->addMatcher(
       cxxRecordDecl(
           allOf(isDefinition(),
-                unless(anyOf(isUnion(),                     //
-                             hasName("const_iterator"),     //
-                             hasName("except"),             //
-                             hasName("iterator"),           //
-                             hasName("has_input_operator"), // core_strconv
-                             hasName("has_output_operator") // core_strconv
-                             ))))
+                unless(anyOf(isUnion(),                 //
+                             hasAnyName(                //
+                                 "const_iterator",      //
+                                 "except",              //
+                                 "has_input_operator",  // core_strconv
+                                 "has_output_operator", // core_strconv
+                                 "iterator",            //
+                                 "promise_type"         //
+                                 )))))
           .bind("record"),
       this);
 
-  // Field declaration (members of class/union/struct)
+  // Fields (members of class/union/struct)
   Finder->addMatcher(fieldDecl().bind("field"), this);
 
-  // Var declaration (variable declaration not that is not a field)
+  // Variables (variable declaration not that is not a field)
   if (CheckRangeBasedForLoops) {
     Finder->addMatcher(varDecl().bind("var"), this);
   } else {
