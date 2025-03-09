@@ -6149,18 +6149,19 @@ tryAgain:
             if (!Sema::getFormatStringInfo(D, PVFormat->getFormatIdx(),
                                            PVFormat->getFirstArg(), &CallerFSI))
               continue;
-            // We also check if the formats are compatible.
-            // We can't pass a 'scanf' string to a 'printf' function.
-            if (Type != S.GetFormatStringType(PVFormat)) {
-              S.Diag(Args[format_idx]->getBeginLoc(),
-                     diag::warn_format_string_type_incompatible)
-                  << PVFormat->getType()->getName()
-                  << S.GetFormatStringTypeName(Type);
-              if (!InFunctionCall) {
-                S.Diag(E->getBeginLoc(), diag::note_format_string_defined);
+            if (PV->getFunctionScopeIndex() == CallerFSI.FormatIdx) {
+              // We also check if the formats are compatible.
+              // We can't pass a 'scanf' string to a 'printf' function.
+              if (Type != S.GetFormatStringType(PVFormat)) {
+                S.Diag(Args[format_idx]->getBeginLoc(),
+                       diag::warn_format_string_type_incompatible)
+                    << PVFormat->getType()->getName()
+                    << S.GetFormatStringTypeName(Type);
+                if (!InFunctionCall) {
+                  S.Diag(E->getBeginLoc(), diag::note_format_string_defined);
+                }
+                return SLCT_UncheckedLiteral;
               }
-              return SLCT_UncheckedLiteral;
-            } else if (PV->getFunctionScopeIndex() == CallerFSI.FormatIdx) {
               // Lastly, check that argument passing kinds transition in a
               // way that makes sense:
               // from a caller with FAPK_VAList, allow FAPK_VAList
@@ -7390,10 +7391,11 @@ bool DecomposePrintfHandler::GetSpecifiers(
   const char *Str = Data.data();
   llvm::SmallBitVector BV;
   UncoveredArgHandler UA;
+  const Expr *PrintfArgs[] = {FSL->getFormatString()};
   DecomposePrintfHandler H(S, FSL, FSL->getFormatString(), Type, 0, 0, IsObjC,
-                           Str, Sema::FAPK_Elsewhere, {FSL->getFormatString()},
-                           0, InFunctionCall, Sema::VariadicDoesNotApply, BV,
-                           UA, Args);
+                           Str, Sema::FAPK_Elsewhere, PrintfArgs, 0,
+                           InFunctionCall, Sema::VariadicDoesNotApply, BV, UA,
+                           Args);
 
   if (!analyze_format_string::ParsePrintfString(
           H, Str, Str + Data.size(), S.getLangOpts(), S.Context.getTargetInfo(),
@@ -7402,7 +7404,7 @@ bool DecomposePrintfHandler::GetSpecifiers(
   if (H.HadError)
     return false;
 
-  std::sort(
+  std::stable_sort(
       Args.begin(), Args.end(),
       [](const EquatableFormatArgument &A, const EquatableFormatArgument &B) {
         return A.getPosition() < B.getPosition();
