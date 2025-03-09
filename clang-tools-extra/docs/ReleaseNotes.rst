@@ -91,16 +91,6 @@ Improvements to clang-tidy
 New checks
 ^^^^^^^^^^
 
-- New :doc:`cathexis-LongLambda
-  <clang-tidy/checks/cathexis/LongLambda>` check.
-
-  FIXME: Write a short description.
-
-- New :doc:`cathexis-quality-long-lambda
-  <clang-tidy/checks/cathexis/quality-long-lambda>` check.
-
-  FIXME: Write a short description.
-
 New check aliases
 ^^^^^^^^^^^^^^^^^
 
