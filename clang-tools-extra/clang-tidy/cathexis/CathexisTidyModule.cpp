@@ -14,6 +14,7 @@
 #include "AbseilWrappersCheck.h"
 #include "BannedCFunctionsCheck.h"
 #include "BugproneBufDataCheck.h"
+#include "QualityLongLambdaCheck.h"
 #include "NamingConventionsCheck.h"
 #include "PackedStructMissingSizeCheckCheck.h"
 #include "ProtectedClassMemberCheck.h"
@@ -53,6 +54,8 @@ public:
         "cathexis-banned-c-functions");
     CheckFactories.registerCheck<BugproneBufDataCheck>(
         "cathexis-bugprone-buf-data");
+    CheckFactories.registerCheck<QualityLongLambdaCheck>(
+        "cathexis-quality-long-lambda");
     CheckFactories.registerCheck<NamingConventionsCheck>(
         "cathexis-naming-conventions");
     CheckFactories.registerCheck<PackedStructMissingSizeCheckCheck>(

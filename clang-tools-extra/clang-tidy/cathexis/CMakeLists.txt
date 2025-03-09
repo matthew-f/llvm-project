@@ -5,6 +5,7 @@ add_clang_library(clangTidyCathexisModule
   BannedCFunctionsCheck.cpp
   BugproneBufDataCheck.cpp
   CathexisTidyModule.cpp
+  QualityLongLambdaCheck.cpp
   NamingConventionsCheck.cpp
   PackedStructMissingSizeCheckCheck.cpp
   ProtectedClassMemberCheck.cpp
