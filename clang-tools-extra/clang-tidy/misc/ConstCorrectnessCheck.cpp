@@ -170,75 +170,103 @@ void ConstCorrectnessCheck::check(const MatchFinder::MatchResult &Result) {
       VC = VariableCategory::Pointer;
   }
 
-  auto CheckValue =
-      [&]() {
-        // The scope is only registered if the analysis shall be run.
-        registerScope(LocalScope, Result.Context);
+  auto CheckValue = [&]() {
+    // The scope is only registered if the analysis shall be run.
+    registerScope(LocalScope, Result.Context);
 
-        // Offload const-analysis to utility function.
-        if (ScopesCache[LocalScope]->isMutated(Variable))
-          return;
+    // Offload const-analysis to utility function.
+    if (ScopesCache[LocalScope]->isMutated(Variable))
+      return;
 
-        if (VC == VariableCategory::Pointer && !WarnPointersAsValues)
-          return;
+    auto Diag = diag(Variable->getBeginLoc(),
+                     "variable %0 of type %1 can be declared 'const'")
+                << Variable << VT;
+    if (IsNormalVariableInTemplate)
+      TemplateDiagnosticsCache.insert(Variable->getBeginLoc());
+    if (!CanBeFixIt)
+      return;
+    using namespace utils::fixit;
+    if (VC == VariableCategory::Value && TransformValues) {
+      Diag << addQualifierToVarDecl(*Variable, *Result.Context,
+                                    Qualifiers::Const, QualifierTarget::Value,
+                                    QualifierPolicy::Right);
+      // FIXME: Add '{}' for default initialization if no user-defined default
+      // constructor exists and there is no initializer.
+      return;
+    }
 
-        if (VC == VariableCategory::Value && !AnalyzeValues)
-          return;
+    if (VC == VariableCategory::Reference && TransformReferences) {
+      Diag << addQualifierToVarDecl(*Variable, *Result.Context,
+                                    Qualifiers::Const, QualifierTarget::Value,
+                                    QualifierPolicy::Right);
+      return;
+    }
 
-        // The scope is only registered if the analysis shall be run.
-        registerScope(LocalScope, Result.Context);
+    if (VC == VariableCategory::Pointer && TransformPointersAsValues) {
+      Diag << addQualifierToVarDecl(*Variable, *Result.Context,
+                                    Qualifiers::Const, QualifierTarget::Value,
+                                    QualifierPolicy::Right);
+      return;
+    }
+  };
 
-        // Offload const-analysis to utility function.
-        if (ScopesCache[LocalScope]->isMutated(Variable))
-          return;
+  auto CheckPointee = [&]() {
+    assert(VC == VariableCategory::Pointer);
+    registerScope(LocalScope, Result.Context);
+    if (ScopesCache[LocalScope]->isPointeeMutated(Variable))
+      return;
+    auto Diag =
+        diag(Variable->getBeginLoc(),
+             "pointee of variable %0 of type %1 can be declared 'const'")
+        << Variable << VT;
+    if (IsNormalVariableInTemplate)
+      TemplateDiagnosticsCache.insert(Variable->getBeginLoc());
+    if (!CanBeFixIt)
+      return;
+    using namespace utils::fixit;
+    if (TransformPointersAsPointers) {
+      Diag << addQualifierToVarDecl(*Variable, *Result.Context,
+                                    Qualifiers::Const, QualifierTarget::Pointee,
+                                    QualifierPolicy::Right);
+    }
+  };
 
-        auto Diag = diag(Variable->getBeginLoc(),
-                         "variable %0 of type %1 can be declared 'const'")
-                    << Variable << Variable->getType();
-        if (IsNormalVariableInTemplate)
-          TemplateDiagnosticsCache.insert(Variable->getBeginLoc());
-
-        const auto *VarDeclStmt = Result.Nodes.getNodeAs<DeclStmt>("decl-stmt");
-
-        // It can not be guaranteed that the variable is declared isolated,
-        // therefore a transformation might effect the other variables as well
-        // and be incorrect.
-        if (VarDeclStmt == nullptr || !VarDeclStmt->isSingleDecl())
-          return;
-
-        using namespace utils::fixit;
-        if (VC == VariableCategory::Value && TransformValues) {
-          Diag << addQualifierToVarDecl(
-              *Variable, *Result.Context, Qualifiers::Const,
-              QualifierTarget::Value, QualifierPolicy::Right);
-          // FIXME: Add '{}' for default initialization if no user-defined
-          // default constructor exists and there is no initializer.
-          return;
-        }
-
-        if (VC == VariableCategory::Reference && TransformReferences) {
-          Diag << addQualifierToVarDecl(
-              *Variable, *Result.Context, Qualifiers::Const,
-              QualifierTarget::Value, QualifierPolicy::Right);
-          return;
-        }
-
-        if (VC == VariableCategory::Pointer) {
-          if (WarnPointersAsValues && TransformPointersAsValues) {
-            Diag << addQualifierToVarDecl(
-                *Variable, *Result.Context, Qualifiers::Const,
-                QualifierTarget::Value, QualifierPolicy::Right);
-          }
-          return;
+  // Each variable can only be in one category: Value, Pointer, Reference.
+  // Analysis can be controlled for every category.
+  if (VC == VariableCategory::Value && AnalyzeValues) {
+    CheckValue();
+    return;
+  }
+  if (VC == VariableCategory::Reference && AnalyzeReferences) {
+    if (VT->getPointeeType()->isPointerType() && !WarnPointersAsValues)
+      return;
+    CheckValue();
+    return;
+  }
+  if (VC == VariableCategory::Pointer && AnalyzePointers) {
+    if (WarnPointersAsValues && !VT.isConstQualified())
+      CheckValue();
+    if (WarnPointersAsPointers) {
+      if (const auto *PT = dyn_cast<PointerType>(VT)) {
+        if (!PT->getPointeeType().isConstQualified())
+          CheckPointee();
+      }
+      if (const auto *AT = dyn_cast<ArrayType>(VT)) {
+        if (!AT->getElementType().isConstQualified()) {
+          assert(AT->getElementType()->isPointerType());
+          CheckPointee();
         }
       }
-
-  void
-  ConstCorrectnessCheck::registerScope(const Stmt *LocalScope,
-                                       ASTContext *Context) {
-    auto &Analyzer = ScopesCache[LocalScope];
-    if (!Analyzer)
-      Analyzer = std::make_unique<ExprMutationAnalyzer>(*LocalScope, *Context);
+    }
+    return;
   }
+}
+
+void ConstCorrectnessCheck::registerScope(const Stmt *LocalScope,
+                                          ASTContext *Context) {
+  auto &Analyzer = ScopesCache[LocalScope];
+  if (!Analyzer)
+    Analyzer = std::make_unique<ExprMutationAnalyzer>(*LocalScope, *Context);
+}
 
 } // namespace clang::tidy::misc
