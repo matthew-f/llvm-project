@@ -26,6 +26,7 @@
 #include "QualityDeprecatedCheck.h"
 #include "QualityEnumCheck.h"
 #include "QualityLoggingCheck.h"
+#include "QualityNdLoggingCheck.h"
 #include "QualityPackedStructuresCheck.h"
 #include "QualityQtAvoidQdialogExecCheck.h"
 #include "QualityReviewCheck.h"
@@ -76,6 +77,8 @@ public:
     CheckFactories.registerCheck<QualityEnumCheck>("cathexis-quality-enum");
     CheckFactories.registerCheck<QualityLoggingCheck>(
         "cathexis-quality-logging");
+    CheckFactories.registerCheck<QualityNdLoggingCheck>(
+        "cathexis-quality-nd-logging");
     CheckFactories.registerCheck<QualityPackedStructuresCheck>(
         "cathexis-quality-packed-structures");
     CheckFactories.registerCheck<QualityQtAvoidQdialogExecCheck>(
