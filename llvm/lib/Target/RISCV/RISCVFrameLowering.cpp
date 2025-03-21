@@ -1008,10 +1008,9 @@ void RISCVFrameLowering::emitPrologue(MachineFunction &MF,
     // The frame pointer does need to be reserved from register allocation.
     assert(MF.getRegInfo().isReserved(FPReg) && "FP not reserved");
 
-    // Xqccmp with hasFP will update FP using `qc.cm.pushfp`, so we don't need
-    // to update it again, but we do need to emit the `.cfi_def_cfa` below.
-    if (RVFI->getPushPopKind(MF) !=
-        RISCVMachineFunctionInfo::PushPopKind::VendorXqccmp) {
+    // Some stack management variants automatically keep FP updated, so we don't
+    // need an instruction to do so.
+    if (!RVFI->hasImplicitFPUpdates(MF)) {
       RI->adjustReg(
           MBB, MBBI, DL, FPReg, SPReg,
           StackOffset::getFixed(RealStackSize - RVFI->getVarArgsSaveSize()),
@@ -2195,6 +2194,17 @@ bool RISCVFrameLowering::canUseAsPrologue(const MachineBasicBlock &MBB) const {
   MachineBasicBlock *TmpMBB = const_cast<MachineBasicBlock *>(&MBB);
   const MachineFunction *MF = MBB.getParent();
   const auto *RVFI = MF->getInfo<RISCVMachineFunctionInfo>();
+
+  // Make sure VTYPE and VL are not live-in since we will use vsetvli in the
+  // prologue to get the VLEN, and that will clobber these registers.
+  //
+  // We may do also check the stack contains objects with scalable vector type,
+  // but this will require iterating over all the stack objects, but this may
+  // not worth since the situation is rare, we could do further check in future
+  // if we find it is necessary.
+  if (STI.preferVsetvliOverReadVLENB() &&
+      (MBB.isLiveIn(RISCV::VTYPE) || MBB.isLiveIn(RISCV::VL)))
+    return false;
 
   if (!RVFI->useSaveRestoreLibCalls(*MF))
     return true;

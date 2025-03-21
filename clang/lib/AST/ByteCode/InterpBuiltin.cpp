@@ -1892,10 +1892,12 @@ static bool interp__builtin_memcmp(InterpState &S, CodePtr OpPC,
   };
 
   const ASTContext &ASTCtx = S.getASTContext();
+  QualType ElemTypeA = getElemType(PtrA);
+  QualType ElemTypeB = getElemType(PtrB);
   // FIXME: This is an arbitrary limitation the current constant interpreter
   // had. We could remove this.
-  if (!IsWide && (!isOneByteCharacterType(getElemType(PtrA)) ||
-                  !isOneByteCharacterType(getElemType(PtrB)))) {
+  if (!IsWide && (!isOneByteCharacterType(ElemTypeA) ||
+                  !isOneByteCharacterType(ElemTypeB))) {
     S.FFDiag(S.Current->getSource(OpPC),
              diag::note_constexpr_memcmp_unsupported)
         << ASTCtx.BuiltinInfo.getQuotedName(ID) << PtrA.getType()
@@ -1908,7 +1910,7 @@ static bool interp__builtin_memcmp(InterpState &S, CodePtr OpPC,
 
   // Now, read both pointers to a buffer and compare those.
   BitcastBuffer BufferA(
-      Bits(ASTCtx.getTypeSize(PtrA.getFieldDesc()->getType())));
+      Bits(ASTCtx.getTypeSize(ElemTypeA) * PtrA.getNumElems()));
   readPointerToBuffer(S.getContext(), PtrA, BufferA, false);
   // FIXME: The swapping here is UNDOING something we do when reading the
   // data into the buffer.
@@ -1916,7 +1918,7 @@ static bool interp__builtin_memcmp(InterpState &S, CodePtr OpPC,
     swapBytes(BufferA.Data.get(), BufferA.byteSize().getQuantity());
 
   BitcastBuffer BufferB(
-      Bits(ASTCtx.getTypeSize(PtrB.getFieldDesc()->getType())));
+      Bits(ASTCtx.getTypeSize(ElemTypeB) * PtrB.getNumElems()));
   readPointerToBuffer(S.getContext(), PtrB, BufferB, false);
   // FIXME: The swapping here is UNDOING something we do when reading the
   // data into the buffer.
@@ -2037,19 +2039,36 @@ static bool interp__builtin_memchr(InterpState &S, CodePtr OpPC,
     }
   }
 
-  uint64_t DesiredVal =
-      Desired.trunc(S.getASTContext().getCharWidth()).getZExtValue();
+  uint64_t DesiredVal;
+  if (ID == Builtin::BIwmemchr || ID == Builtin::BI__builtin_wmemchr ||
+      ID == Builtin::BIwcschr || ID == Builtin::BI__builtin_wcschr) {
+    // wcschr and wmemchr are given a wchar_t to look for. Just use it.
+    DesiredVal = Desired.getZExtValue();
+  } else {
+    DesiredVal = Desired.trunc(S.getASTContext().getCharWidth()).getZExtValue();
+  }
+
   bool StopAtZero =
       (ID == Builtin::BIstrchr || ID == Builtin::BI__builtin_strchr);
 
+  PrimType ElemT =
+      IsRawByte
+          ? PT_Sint8
+          : *S.getContext().classify(Ptr.getFieldDesc()->getElemQualType());
+
   size_t Index = Ptr.getIndex();
+  size_t Step = 0;
   for (;;) {
-    const Pointer &ElemPtr = Index > 0 ? Ptr.atIndex(Index) : Ptr;
+    const Pointer &ElemPtr =
+        (Index + Step) > 0 ? Ptr.atIndex(Index + Step) : Ptr;
 
     if (!CheckLoad(S, OpPC, ElemPtr))
       return false;
 
-    unsigned char V = static_cast<unsigned char>(ElemPtr.deref<char>());
+    uint64_t V;
+    INT_TYPE_SWITCH_NO_BOOL(
+        ElemT, { V = static_cast<uint64_t>(ElemPtr.deref<T>().toUnsigned()); });
+
     if (V == DesiredVal) {
       S.Stk.push<Pointer>(ElemPtr);
       return true;
@@ -2058,8 +2077,8 @@ static bool interp__builtin_memchr(InterpState &S, CodePtr OpPC,
     if (StopAtZero && V == 0)
       break;
 
-    ++Index;
-    if (MaxLength && Index == MaxLength->getZExtValue())
+    ++Step;
+    if (MaxLength && Step == MaxLength->getZExtValue())
       break;
   }
 
@@ -2552,11 +2571,11 @@ bool InterpretBuiltin(InterpState &S, CodePtr OpPC, const Function *F,
   case Builtin::BI__builtin_memchr:
   case Builtin::BIstrchr:
   case Builtin::BI__builtin_strchr:
+  case Builtin::BIwmemchr:
+  case Builtin::BI__builtin_wmemchr:
 #if 0
   case Builtin::BIwcschr:
   case Builtin::BI__builtin_wcschr:
-  case Builtin::BImemchr:
-  case Builtin::BI__builtin_wmemchr:
 #endif
   case Builtin::BI__builtin_char_memchr:
     if (!interp__builtin_memchr(S, OpPC, Frame, F, Call))
