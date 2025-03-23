@@ -17,8 +17,9 @@ void QualityNdLoggingCheck::registerMatchers(MatchFinder *Finder) {
 
   Finder->addMatcher(
       cxxMemberCallExpr(
-          unless(anyOf(isExpandedFromMacro("CDebugF"),
-                       isExpandedFromMacro("CDebugf"),
+          unless(anyOf(isExpandedFromMacro("CDebugF"), //
+                       isExpandedFromMacro("CDebugf"), //
+                       isExpandedFromMacro("CDebugC"), //
                        isExpandedFromMacro("CDebug"))),
           on(hasType(cxxRecordDecl(hasName("core::V2Logger")))),
           callee(cxxMethodDecl(anyOf(hasName("log"),   //
