@@ -18,7 +18,7 @@ add_clang_library(clangTidyCathexisModule
   QualityEnumCheck.cpp
   QualityEnumToStringCheck.cpp
   QualityLoggingCheck.cpp
-  QualityNdLoggingCheck.cpp
+  NdLoggingCheck.cpp
   QualityPackedStructuresCheck.cpp
   QualityQtAvoidQdialogExecCheck.cpp
   QualityReviewCheck.cpp

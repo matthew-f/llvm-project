@@ -1,4 +1,4 @@
-//===--- QualityNdLoggingCheck.cpp - clang-tidy ---------------------------===//
+//===--- NdLoggingCheck.cpp - clang-tidy ---------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,14 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "QualityNdLoggingCheck.h"
+#include "NdLoggingCheck.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
 using namespace clang::ast_matchers;
 
 namespace clang::tidy::cathexis {
 
-void QualityNdLoggingCheck::registerMatchers(MatchFinder *Finder) {
+void NdLoggingCheck::registerMatchers(MatchFinder *Finder) {
 
   Finder->addMatcher(
       cxxMemberCallExpr(
@@ -34,7 +34,7 @@ void QualityNdLoggingCheck::registerMatchers(MatchFinder *Finder) {
       this);
 }
 
-void QualityNdLoggingCheck::check(const MatchFinder::MatchResult &Result) {
+void NdLoggingCheck::check(const MatchFinder::MatchResult &Result) {
   const auto *call = Result.Nodes.getNodeAs<CXXMemberCallExpr>("call");
   if (call != nullptr) {
     diag(call->getBeginLoc(),
