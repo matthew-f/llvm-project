@@ -29,6 +29,7 @@ add_clang_library(clangTidyCathexisModule
   RefactorXmlRenameUpdateCheck.cpp
   RefactorXmlUseFindoraddCheck.cpp
   UseAnonymousDefCheck.cpp
+  UseDefaultEqualsOperatorCheck.cpp
   UseNodiscardCheck.cpp
   WrapperCheck.cpp
 
