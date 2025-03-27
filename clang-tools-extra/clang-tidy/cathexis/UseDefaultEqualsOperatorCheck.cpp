@@ -32,6 +32,7 @@ void UseDefaultEqualsOperatorCheck::check(
     return;
   }
 
+  decl = decl->getCanonicalDecl();
   diag(decl->getLocation(), "Use default for %0") << decl->getName();
 }
 
