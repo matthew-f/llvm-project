@@ -33,7 +33,8 @@ void UseDefaultEqualsOperatorCheck::check(
   }
 
   decl = decl->getCanonicalDecl();
-  diag(decl->getLocation(), "Use default for %0") << decl->getName();
+  diag(decl->getLocation(), "Use default for %0")
+      << decl->getQualifiedNameAsString();
 }
 
 } // namespace clang::tidy::cathexis
