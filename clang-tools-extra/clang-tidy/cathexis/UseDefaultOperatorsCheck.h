@@ -1,4 +1,4 @@
-//===--- UseDefaultEqualsOperatorCheck.h - clang-tidy -----------*- C++ -*-===//
+//===--- UseDefaultOperatorsCheck.h - clang-tidy ----------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_CATHEXIS_USEDEFAULTEQUALSOPERATORCHECK_H
-#define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_CATHEXIS_USEDEFAULTEQUALSOPERATORCHECK_H
+#ifndef LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_CATHEXIS_USEDEFAULTOPERATORSCHECK_H
+#define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_CATHEXIS_USEDEFAULTOPERATORSCHECK_H
 
 #include "../ClangTidyCheck.h"
 
@@ -16,10 +16,10 @@ namespace clang::tidy::cathexis {
 /// FIXME: Write a short description.
 ///
 /// For the user-facing documentation see:
-/// http://clang.llvm.org/extra/clang-tidy/checks/cathexis/use-default-equals-operator.html
-class UseDefaultEqualsOperatorCheck : public ClangTidyCheck {
+/// http://clang.llvm.org/extra/clang-tidy/checks/cathexis/use-default-operators.html
+class UseDefaultOperatorsCheck : public ClangTidyCheck {
 public:
-  UseDefaultEqualsOperatorCheck(StringRef Name, ClangTidyContext *Context)
+  UseDefaultOperatorsCheck(StringRef Name, ClangTidyContext *Context)
       : ClangTidyCheck(Name, Context) {}
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
@@ -30,4 +30,4 @@ public:
 
 } // namespace clang::tidy::cathexis
 
-#endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_CATHEXIS_USEDEFAULTEQUALSOPERATORCHECK_H
+#endif // LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_CATHEXIS_USEDEFAULTOPERATORSCHECK_H

@@ -39,7 +39,7 @@
 //#include "StringFindStartswithCheck.h"
 #include "QualityEnumToStringCheck.h"
 #include "UseAnonymousDefCheck.h"
-#include "UseDefaultEqualsOperatorCheck.h"
+#include "UseDefaultOperatorsCheck.h"
 #include "UseNodiscardCheck.h"
 #include "WrapperCheck.h"
 
@@ -101,8 +101,8 @@ public:
     //   "cathexis-string-find-startswith");
     CheckFactories.registerCheck<UseAnonymousDefCheck>(
         "cathexis-use-anonymous-def");
-    CheckFactories.registerCheck<UseDefaultEqualsOperatorCheck>(
-        "cathexis-use-default-equals-operator");
+    CheckFactories.registerCheck<UseDefaultOperatorsCheck>(
+        "cathexis-use-default-operators");
     CheckFactories.registerCheck<UseNodiscardCheck>("cathexis-use-nodiscard");
     CheckFactories.registerCheck<WrapperCheck>("cathexis-wrapper");
     CheckFactories.registerCheck<QualityEnumToStringCheck>(
