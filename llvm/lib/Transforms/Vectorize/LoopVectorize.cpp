@@ -508,15 +508,6 @@ public:
   // Return true if any runtime check is added.
   bool areSafetyChecksAdded() { return AddedSafetyChecks; }
 
-  /// A helper function to scalarize a single Instruction in the innermost loop.
-  /// Generates a sequence of scalar instances for each lane between \p MinLane
-  /// and \p MaxLane, times each part between \p MinPart and \p MaxPart,
-  /// inclusive. Uses the VPValue operands from \p RepRecipe instead of \p
-  /// Instr's operands.
-  void scalarizeInstruction(const Instruction *Instr,
-                            VPReplicateRecipe *RepRecipe, const VPLane &Lane,
-                            VPTransformState &State);
-
   /// Fix the non-induction PHIs in \p Plan.
   void fixNonInductionPHIs(VPTransformState &State);
 
@@ -2321,62 +2312,6 @@ static bool useMaskedInterleavedAccesses(const TargetTransformInfo &TTI) {
   return TTI.enableMaskedInterleavedAccessVectorization();
 }
 
-void InnerLoopVectorizer::scalarizeInstruction(const Instruction *Instr,
-                                               VPReplicateRecipe *RepRecipe,
-                                               const VPLane &Lane,
-                                               VPTransformState &State) {
-  assert((!Instr->getType()->isAggregateType() ||
-          canVectorizeTy(Instr->getType())) &&
-         "Expected vectorizable or non-aggregate type.");
-
-  // Does this instruction return a value ?
-  bool IsVoidRetTy = Instr->getType()->isVoidTy();
-
-  Instruction *Cloned = Instr->clone();
-  if (!IsVoidRetTy) {
-    Cloned->setName(Instr->getName() + ".cloned");
-#if !defined(NDEBUG)
-    // Verify that VPlan type inference results agree with the type of the
-    // generated values.
-    assert(State.TypeAnalysis.inferScalarType(RepRecipe) == Cloned->getType() &&
-           "inferred type and type from generated instructions do not match");
-#endif
-  }
-
-  RepRecipe->applyFlags(*Cloned);
-
-  if (auto DL = RepRecipe->getDebugLoc())
-    State.setDebugLocFrom(DL);
-
-  // Replace the operands of the cloned instructions with their scalar
-  // equivalents in the new loop.
-  for (const auto &I : enumerate(RepRecipe->operands())) {
-    auto InputLane = Lane;
-    VPValue *Operand = I.value();
-    if (vputils::isUniformAfterVectorization(Operand))
-      InputLane = VPLane::getFirstLane();
-    Cloned->setOperand(I.index(), State.get(Operand, InputLane));
-  }
-  State.addNewMetadata(Cloned, Instr);
-
-  // Place the cloned scalar in the new loop.
-  State.Builder.Insert(Cloned);
-
-  State.set(RepRecipe, Cloned, Lane);
-
-  // If we just cloned a new assumption, add it the assumption cache.
-  if (auto *II = dyn_cast<AssumeInst>(Cloned))
-    AC->registerAssumption(II);
-
-  assert(
-      (RepRecipe->getParent()->getParent() ||
-       !RepRecipe->getParent()->getPlan()->getVectorLoopRegion() ||
-       all_of(RepRecipe->operands(),
-              [](VPValue *Op) { return Op->isDefinedOutsideLoopRegions(); })) &&
-      "Expected a recipe is either within a region or all of its operands "
-      "are defined outside the vectorized region.");
-}
-
 Value *
 InnerLoopVectorizer::getOrCreateVectorTripCount(BasicBlock *InsertBlock) {
   if (VectorTripCount)
@@ -2883,9 +2818,9 @@ void InnerLoopVectorizer::fixNonInductionPHIs(VPTransformState &State) {
       PHINode *NewPhi = cast<PHINode>(State.get(VPPhi));
       // Make sure the builder has a valid insert point.
       Builder.SetInsertPoint(NewPhi);
-      for (unsigned Idx = 0; Idx < VPPhi->getNumOperands(); ++Idx) {
+      for (unsigned Idx = 0; Idx < VPPhi->getNumIncoming(); ++Idx) {
         VPValue *Inc = VPPhi->getIncomingValue(Idx);
-        VPBasicBlock *VPBB = VPPhi->getIncomingBlock(Idx);
+        const VPBasicBlock *VPBB = VPPhi->getIncomingBlock(Idx);
         NewPhi->addIncoming(State.get(Inc), State.CFG.VPBB2IRBB[VPBB]);
       }
     }
@@ -5100,7 +5035,7 @@ LoopVectorizationCostModel::selectInterleaveCount(VPlan &Plan, ElementCount VF,
     }
     unsigned MaxLocalUsers = Pair.second;
     unsigned LoopInvariantRegs = 0;
-    if (R.LoopInvariantRegs.find(Pair.first) != R.LoopInvariantRegs.end())
+    if (R.LoopInvariantRegs.contains(Pair.first))
       LoopInvariantRegs = R.LoopInvariantRegs[Pair.first];
 
     unsigned TmpIC = llvm::bit_floor((TargetNumRegisters - LoopInvariantRegs) /
@@ -5634,6 +5569,10 @@ InstructionCost LoopVectorizationCostModel::computePredInstDiscount(
 
     // If we've already analyzed the instruction, there's nothing to do.
     if (ScalarCosts.contains(I))
+      continue;
+
+    // Cannot scalarize fixed-order recurrence phis at the moment.
+    if (isa<PHINode>(I) && Legal->isFixedOrderRecurrence(cast<PHINode>(I)))
       continue;
 
     // Compute the cost of the vector instruction. Note that this cost already
@@ -7848,6 +7787,7 @@ DenseMap<const SCEV *, Value *> LoopVectorizationPlanner::executePlan(
          "Trying to execute plan with unsupported VF");
   assert(BestVPlan.hasUF(BestUF) &&
          "Trying to execute plan with unsupported UF");
+  VPlanTransforms::materializeStepVectors(BestVPlan);
   // TODO: Move to VPlan transform stage once the transition to the VPlan-based
   // cost model is complete for better cost estimates.
   VPlanTransforms::runPass(VPlanTransforms::unrollByUF, BestVPlan, BestUF,
@@ -7863,7 +7803,7 @@ DenseMap<const SCEV *, Value *> LoopVectorizationPlanner::executePlan(
                                             *Legal->getWidestInductionType());
 
   // Perform the actual loop transformation.
-  VPTransformState State(&TTI, BestVF, LI, DT, ILV.Builder, &ILV, &BestVPlan,
+  VPTransformState State(&TTI, BestVF, LI, DT, ILV.AC, ILV.Builder, &BestVPlan,
                          OrigLoop->getParentLoop(),
                          Legal->getWidestInductionType());
 
@@ -7901,24 +7841,6 @@ DenseMap<const SCEV *, Value *> LoopVectorizationPlanner::executePlan(
   State.CFG.PrevBB = ILV.createVectorizedLoopSkeleton();
   if (VectorizingEpilogue)
     VPlanTransforms::removeDeadRecipes(BestVPlan);
-
-  // Only use noalias metadata when using memory checks guaranteeing no overlap
-  // across all iterations.
-  const LoopAccessInfo *LAI = Legal->getLAI();
-  std::unique_ptr<LoopVersioning> LVer = nullptr;
-  if (LAI && !LAI->getRuntimePointerChecking()->getChecks().empty() &&
-      !LAI->getRuntimePointerChecking()->getDiffChecks()) {
-
-    //  We currently don't use LoopVersioning for the actual loop cloning but we
-    //  still use it to add the noalias metadata.
-    //  TODO: Find a better way to re-use LoopVersioning functionality to add
-    //        metadata.
-    LVer = std::make_unique<LoopVersioning>(
-        *LAI, LAI->getRuntimePointerChecking()->getChecks(), OrigLoop, LI, DT,
-        PSE.getSE());
-    State.LVer = &*LVer;
-    State.LVer->prepareNoAliasMetadata();
-  }
 
   ILV.printDebugTracesAtStart();
 
@@ -7991,6 +7913,26 @@ DenseMap<const SCEV *, Value *> LoopVectorizationPlanner::executePlan(
 
       LoopVectorizeHints Hints(L, true, *ORE);
       Hints.setAlreadyVectorized();
+
+      // Check if it's EVL-vectorized and mark the corresponding metadata.
+      bool IsEVLVectorized =
+          llvm::any_of(*HeaderVPBB, [](const VPRecipeBase &Recipe) {
+            // Looking for the ExplictVectorLength VPInstruction.
+            if (const auto *VI = dyn_cast<VPInstruction>(&Recipe))
+              return VI->getOpcode() == VPInstruction::ExplicitVectorLength;
+            return false;
+          });
+      if (IsEVLVectorized) {
+        LLVMContext &Context = L->getHeader()->getContext();
+        MDNode *LoopID = L->getLoopID();
+        auto *IsEVLVectorizedMD = MDNode::get(
+            Context,
+            {MDString::get(Context, "llvm.loop.isvectorized.tailfoldingstyle"),
+             MDString::get(Context, "evl")});
+        MDNode *NewLoopID = makePostTransformationMetadata(Context, LoopID, {},
+                                                           {IsEVLVectorizedMD});
+        L->setLoopID(NewLoopID);
+      }
     }
     TargetTransformInfo::UnrollingPreferences UP;
     TTI.getUnrollingPreferences(L, *PSE.getSE(), UP, ORE);
@@ -8512,11 +8454,12 @@ VPRecipeBuilder::tryToWidenMemory(Instruction *I, ArrayRef<VPValue *> Operands,
   }
   if (LoadInst *Load = dyn_cast<LoadInst>(I))
     return new VPWidenLoadRecipe(*Load, Ptr, Mask, Consecutive, Reverse,
-                                 I->getDebugLoc());
+                                 VPIRMetadata(*Load, LVer), I->getDebugLoc());
 
   StoreInst *Store = cast<StoreInst>(I);
   return new VPWidenStoreRecipe(*Store, Ptr, Operands[0], Mask, Consecutive,
-                                Reverse, I->getDebugLoc());
+                                Reverse, VPIRMetadata(*Store, LVer),
+                                I->getDebugLoc());
 }
 
 /// Creates a VPWidenIntOrFpInductionRecpipe for \p Phi. If needed, it will also
@@ -8889,7 +8832,8 @@ VPRecipeBuilder::handleReplication(Instruction *I, ArrayRef<VPValue *> Operands,
   assert((Range.Start.isScalar() || !IsUniform || !IsPredicated ||
           (Range.Start.isScalable() && isa<IntrinsicInst>(I))) &&
          "Should not predicate a uniform recipe");
-  auto *Recipe = new VPReplicateRecipe(I, Operands, IsUniform, BlockInMask);
+  auto *Recipe = new VPReplicateRecipe(I, Operands, IsUniform, BlockInMask,
+                                       VPIRMetadata(*I, LVer));
   return Recipe;
 }
 
@@ -9136,10 +9080,20 @@ void LoopVectorizationPlanner::buildVPlansWithVPRecipes(ElementCount MinVF,
                                                         ElementCount MaxVF) {
   assert(OrigLoop->isInnermost() && "Inner loop expected.");
 
+  const LoopAccessInfo *LAI = Legal->getLAI();
+  LoopVersioning LVer(*LAI, LAI->getRuntimePointerChecking()->getChecks(),
+                      OrigLoop, LI, DT, PSE.getSE());
+  if (!LAI->getRuntimePointerChecking()->getChecks().empty() &&
+      !LAI->getRuntimePointerChecking()->getDiffChecks()) {
+    // Only use noalias metadata when using memory checks guaranteeing no
+    // overlap across all iterations.
+    LVer.prepareNoAliasMetadata();
+  }
+
   auto MaxVFTimes2 = MaxVF * 2;
   for (ElementCount VF = MinVF; ElementCount::isKnownLT(VF, MaxVFTimes2);) {
     VFRange SubRange = {VF, MaxVFTimes2};
-    if (auto Plan = tryToBuildVPlanWithVPRecipes(SubRange)) {
+    if (auto Plan = tryToBuildVPlanWithVPRecipes(SubRange, &LVer)) {
       bool HasScalarVF = Plan->hasScalarVFOnly();
       // Now optimize the initial VPlan.
       if (!HasScalarVF)
@@ -9258,15 +9212,12 @@ static void addScalarResumePhis(VPRecipeBuilder &Builder, VPlan &Plan,
 static SetVector<VPIRInstruction *> collectUsersInLatchExitBlock(VPlan &Plan) {
   SetVector<VPIRInstruction *> ExitUsersToFix;
   for (VPIRBasicBlock *ExitVPBB : Plan.getExitBlocks()) {
+
+    if (ExitVPBB->getSinglePredecessor() != Plan.getMiddleBlock())
+      continue;
+
     for (VPRecipeBase &R : ExitVPBB->phis()) {
       auto *ExitIRI = cast<VPIRPhi>(&R);
-      if (ExitVPBB->getSinglePredecessor() != Plan.getMiddleBlock()) {
-        assert(ExitIRI->getNumOperands() ==
-                   ExitVPBB->getPredecessors().size() &&
-               "early-exit must update exit values on construction");
-        continue;
-      }
-
       assert(ExitIRI->getNumOperands() == 1 && "must have a single operand");
       VPValue *V = ExitIRI->getOperand(0);
       if (V->isLiveIn())
@@ -9404,7 +9355,8 @@ static void addExitUsersForFirstOrderRecurrences(
 }
 
 VPlanPtr
-LoopVectorizationPlanner::tryToBuildVPlanWithVPRecipes(VFRange &Range) {
+LoopVectorizationPlanner::tryToBuildVPlanWithVPRecipes(VFRange &Range,
+                                                       LoopVersioning *LVer) {
 
   using namespace llvm::VPlanPatternMatch;
   SmallPtrSet<const InterleaveGroup<Instruction> *, 1> InterleaveGroups;
@@ -9460,7 +9412,7 @@ LoopVectorizationPlanner::tryToBuildVPlanWithVPRecipes(VFRange &Range) {
   }
 
   VPRecipeBuilder RecipeBuilder(*Plan, OrigLoop, TLI, &TTI, Legal, CM, PSE,
-                                Builder);
+                                Builder, LVer);
 
   // ---------------------------------------------------------------------------
   // Pre-construction: record ingredients whose recipes we'll need to further
@@ -9567,7 +9519,8 @@ LoopVectorizationPlanner::tryToBuildVPlanWithVPRecipes(VFRange &Range) {
         // Only create recipe for the final invariant store of the reduction.
         if (Legal->isInvariantStoreOfReduction(SI)) {
           auto *Recipe =
-              new VPReplicateRecipe(SI, R.operands(), true /* IsUniform */);
+              new VPReplicateRecipe(SI, R.operands(), true /* IsUniform */,
+                                    nullptr /*Mask*/, VPIRMetadata(*SI, LVer));
           Recipe->insertBefore(*MiddleVPBB, MBIP);
         }
         R.eraseFromParent();
@@ -9749,7 +9702,7 @@ VPlanPtr LoopVectorizationPlanner::tryToBuildVPlan(VFRange &Range) {
   // Collect mapping of IR header phis to header phi recipes, to be used in
   // addScalarResumePhis.
   VPRecipeBuilder RecipeBuilder(*Plan, OrigLoop, TLI, &TTI, Legal, CM, PSE,
-                                Builder);
+                                Builder, nullptr /*LVer*/);
   for (auto &R : Plan->getVectorLoopRegion()->getEntryBasicBlock()->phis()) {
     if (isa<VPCanonicalIVPHIRecipe>(&R))
       continue;
@@ -10086,49 +10039,6 @@ void VPDerivedIVRecipe::execute(VPTransformState &State) {
           getOperand(1) == &getParent()->getPlan()->getVectorTripCount()) &&
          "IV didn't need transforming?");
   State.set(this, DerivedIV, VPLane(0));
-}
-
-void VPReplicateRecipe::execute(VPTransformState &State) {
-  Instruction *UI = getUnderlyingInstr();
-  if (State.Lane) { // Generate a single instance.
-    assert((State.VF.isScalar() || !isUniform()) &&
-           "uniform recipe shouldn't be predicated");
-    assert(!State.VF.isScalable() && "Can't scalarize a scalable vector");
-    State.ILV->scalarizeInstruction(UI, this, *State.Lane, State);
-    // Insert scalar instance packing it into a vector.
-    if (State.VF.isVector() && shouldPack()) {
-      // If we're constructing lane 0, initialize to start from poison.
-      if (State.Lane->isFirstLane()) {
-        assert(!State.VF.isScalable() && "VF is assumed to be non scalable.");
-        Value *Poison = PoisonValue::get(
-            VectorType::get(UI->getType(), State.VF));
-        State.set(this, Poison);
-      }
-      State.packScalarIntoVectorizedValue(this, *State.Lane);
-    }
-    return;
-  }
-
-  if (IsUniform) {
-    // Uniform within VL means we need to generate lane 0.
-    State.ILV->scalarizeInstruction(UI, this, VPLane(0), State);
-    return;
-  }
-
-  // A store of a loop varying value to a uniform address only needs the last
-  // copy of the store.
-  if (isa<StoreInst>(UI) &&
-      vputils::isUniformAfterVectorization(getOperand(1))) {
-    auto Lane = VPLane::getLastLaneForVF(State.VF);
-    State.ILV->scalarizeInstruction(UI, this, VPLane(Lane), State);
-    return;
-  }
-
-  // Generate scalar instances for all VF lanes.
-  assert(!State.VF.isScalable() && "Can't scalarize a scalable vector");
-  const unsigned EndLane = State.VF.getKnownMinValue();
-  for (unsigned Lane = 0; Lane < EndLane; ++Lane)
-    State.ILV->scalarizeInstruction(UI, this, VPLane(Lane), State);
 }
 
 // Determine how to lower the scalar epilogue, which depends on 1) optimising
