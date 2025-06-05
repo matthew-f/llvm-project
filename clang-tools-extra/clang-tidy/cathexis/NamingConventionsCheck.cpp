@@ -461,6 +461,11 @@ bool NamingConventionsCheck::isValidVarName(std::string *warning,
     return true;
   }
 
+  if (name[0] == '_') {
+    *warning = "avoid leading '_' as it is reserved in some circumstances";
+    return false;
+  }
+
   std::string prefix = name.substr(0, 2);
   bool is_constexpr = var->isConstexpr();
   bool is_const = var->getType().isConstQualified();
