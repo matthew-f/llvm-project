@@ -24,7 +24,6 @@
 #include "QtTrWithoutQobjectCheck.h"
 #include "QualityContainersCheck.h"
 #include "QualityDeprecatedCheck.h"
-#include "QualityEnumCheck.h"
 #include "QualityLoggingCheck.h"
 #include "NdLoggingCheck.h"
 #include "QualityPackedStructuresCheck.h"
@@ -75,7 +74,6 @@ public:
         "cathexis-quality-containers");
     CheckFactories.registerCheck<QualityDeprecatedCheck>(
         "cathexis-quality-deprecated");
-    CheckFactories.registerCheck<QualityEnumCheck>("cathexis-quality-enum");
     CheckFactories.registerCheck<QualityLoggingCheck>(
         "cathexis-quality-logging");
     CheckFactories.registerCheck<NdLoggingCheck>(

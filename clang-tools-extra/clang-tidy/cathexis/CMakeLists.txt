@@ -15,7 +15,6 @@ add_clang_library(clangTidyCathexisModule
   QtTrWithoutQobjectCheck.cpp
   QualityContainersCheck.cpp
   QualityDeprecatedCheck.cpp
-  QualityEnumCheck.cpp
   QualityEnumToStringCheck.cpp
   QualityLoggingCheck.cpp
   NdLoggingCheck.cpp
