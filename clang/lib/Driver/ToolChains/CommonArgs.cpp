@@ -1415,7 +1415,7 @@ void tools::addOpenMPHostOffloadingArgs(const Compilation &C,
 
   // For all the host OpenMP offloading compile jobs we need to pass the targets
   // information using -fopenmp-targets= option.
-  constexpr llvm::StringLiteral Targets("-fopenmp-targets=");
+  constexpr llvm::StringLiteral Targets("--offload-targets=");
 
   SmallVector<std::string> Triples;
   auto TCRange = C.getOffloadToolChains<Action::OFK_OpenMP>();
@@ -3419,4 +3419,31 @@ StringRef tools::parseMRecipOption(clang::DiagnosticsEngine &Diags,
   }
 
   return Out;
+}
+
+std::string tools::complexRangeKindToStr(LangOptions::ComplexRangeKind Range) {
+  switch (Range) {
+  case LangOptions::ComplexRangeKind::CX_Full:
+    return "full";
+    break;
+  case LangOptions::ComplexRangeKind::CX_Basic:
+    return "basic";
+    break;
+  case LangOptions::ComplexRangeKind::CX_Improved:
+    return "improved";
+    break;
+  case LangOptions::ComplexRangeKind::CX_Promoted:
+    return "promoted";
+    break;
+  default:
+    return "";
+  }
+}
+
+std::string
+tools::renderComplexRangeOption(LangOptionsBase::ComplexRangeKind Range) {
+  std::string ComplexRangeStr = complexRangeKindToStr(Range);
+  if (!ComplexRangeStr.empty())
+    return "-complex-range=" + ComplexRangeStr;
+  return ComplexRangeStr;
 }
