@@ -17,7 +17,6 @@
 #include "QualityLongLambdaCheck.h"
 #include "NamingConventionsCheck.h"
 #include "PackedStructMissingSizeCheckCheck.h"
-#include "ProtectedClassMemberCheck.h"
 #include "QtNoDateTimeToStringCheck.h"
 #include "QtNoQfiledialogStaticMethodsCheck.h"
 #include "QtNolatin1Check.h"
@@ -61,8 +60,6 @@ public:
         "cathexis-naming-conventions");
     CheckFactories.registerCheck<PackedStructMissingSizeCheckCheck>(
         "cathexis-packed-struct-missing-size-check");
-    CheckFactories.registerCheck<ProtectedClassMemberCheck>(
-        "cathexis-protected-class-member");
     CheckFactories.registerCheck<QtNoDateTimeToStringCheck>(
         "cathexis-qt-no-date-time-to-string");
     CheckFactories.registerCheck<QtNolatin1Check>("cathexis-qt-nolatin1");

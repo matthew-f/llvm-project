@@ -8,7 +8,6 @@ add_clang_library(clangTidyCathexisModule
   QualityLongLambdaCheck.cpp
   NamingConventionsCheck.cpp
   PackedStructMissingSizeCheckCheck.cpp
-  ProtectedClassMemberCheck.cpp
   QtNoDateTimeToStringCheck.cpp
   QtNolatin1Check.cpp
   QtNoQfiledialogStaticMethodsCheck.cpp
