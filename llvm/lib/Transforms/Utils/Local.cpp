@@ -610,10 +610,8 @@ void llvm::RecursivelyDeleteTriviallyDeadInstructions(
 }
 
 bool llvm::replaceDbgUsesWithUndef(Instruction *I) {
-  SmallVector<DbgVariableIntrinsic *, 1> DbgUsers;
   SmallVector<DbgVariableRecord *, 1> DPUsers;
-  findDbgUsers(DbgUsers, I, &DPUsers);
-  assert(DbgUsers.empty());
+  findDbgUsers(I, DPUsers);
   for (auto *DVR : DPUsers)
     DVR->setKillLocation();
   return !DPUsers.empty();
@@ -1603,15 +1601,9 @@ static bool PhiHasDebugValue(DILocalVariable *DIVar,
   // Since we can't guarantee that the original dbg.declare intrinsic
   // is removed by LowerDbgDeclare(), we need to make sure that we are
   // not inserting the same dbg.value intrinsic over and over.
-  SmallVector<DbgValueInst *, 1> DbgValues;
   SmallVector<DbgVariableRecord *, 1> DbgVariableRecords;
-  findDbgValues(DbgValues, APN, &DbgVariableRecords);
-  for (auto *DVI : DbgValues) {
-    assert(is_contained(DVI->getValues(), APN));
-    if ((DVI->getVariable() == DIVar) && (DVI->getExpression() == DIExpr))
-      return true;
-  }
-  for (auto *DVR : DbgVariableRecords) {
+  findDbgValues(APN, DbgVariableRecords);
+  for (DbgVariableRecord *DVR : DbgVariableRecords) {
     assert(is_contained(DVR->location_ops(), APN));
     if ((DVR->getVariable() == DIVar) && (DVR->getExpression() == DIExpr))
       return true;
@@ -1970,7 +1962,6 @@ bool llvm::replaceDbgDeclare(Value *Address, Value *NewAddress,
 static void updateOneDbgValueForAlloca(const DebugLoc &Loc,
                                        DILocalVariable *DIVar,
                                        DIExpression *DIExpr, Value *NewAddress,
-                                       DbgValueInst *DVI,
                                        DbgVariableRecord *DVR,
                                        DIBuilder &Builder, int Offset) {
   assert(DIVar && "Missing variable");
@@ -1986,43 +1977,28 @@ static void updateOneDbgValueForAlloca(const DebugLoc &Loc,
   if (Offset)
     DIExpr = DIExpression::prepend(DIExpr, 0, Offset);
 
-  if (DVI) {
-    DVI->setExpression(DIExpr);
-    DVI->replaceVariableLocationOp(0u, NewAddress);
-  } else {
-    assert(DVR);
-    DVR->setExpression(DIExpr);
-    DVR->replaceVariableLocationOp(0u, NewAddress);
-  }
+  DVR->setExpression(DIExpr);
+  DVR->replaceVariableLocationOp(0u, NewAddress);
 }
 
 void llvm::replaceDbgValueForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
                                     DIBuilder &Builder, int Offset) {
-  SmallVector<DbgValueInst *, 1> DbgUsers;
   SmallVector<DbgVariableRecord *, 1> DPUsers;
-  findDbgValues(DbgUsers, AI, &DPUsers);
-
-  // Attempt to replace dbg.values that use this alloca.
-  for (auto *DVI : DbgUsers)
-    updateOneDbgValueForAlloca(DVI->getDebugLoc(), DVI->getVariable(),
-                               DVI->getExpression(), NewAllocaAddress, DVI,
-                               nullptr, Builder, Offset);
+  findDbgValues(AI, DPUsers);
 
   // Replace any DbgVariableRecords that use this alloca.
   for (DbgVariableRecord *DVR : DPUsers)
     updateOneDbgValueForAlloca(DVR->getDebugLoc(), DVR->getVariable(),
-                               DVR->getExpression(), NewAllocaAddress, nullptr,
-                               DVR, Builder, Offset);
+                               DVR->getExpression(), NewAllocaAddress, DVR,
+                               Builder, Offset);
 }
 
 /// Where possible to salvage debug information for \p I do so.
 /// If not possible mark undef.
 void llvm::salvageDebugInfo(Instruction &I) {
-  SmallVector<DbgVariableIntrinsic *, 1> DbgUsers;
   SmallVector<DbgVariableRecord *, 1> DPUsers;
-  findDbgUsers(DbgUsers, &I, &DPUsers);
-  assert(DbgUsers.empty());
-  salvageDebugInfoForDbgValues(I, DbgUsers, DPUsers);
+  findDbgUsers(&I, DPUsers);
+  salvageDebugInfoForDbgValues(I, DPUsers);
 }
 
 template <typename T> static void salvageDbgAssignAddress(T *Assign) {
@@ -2060,18 +2036,14 @@ template <typename T> static void salvageDbgAssignAddress(T *Assign) {
   }
 }
 
-void llvm::salvageDebugInfoForDbgValues(
-    Instruction &I, ArrayRef<DbgVariableIntrinsic *> DbgUsers,
-    ArrayRef<DbgVariableRecord *> DPUsers) {
+void llvm::salvageDebugInfoForDbgValues(Instruction &I,
+                                        ArrayRef<DbgVariableRecord *> DPUsers) {
   // These are arbitrary chosen limits on the maximum number of values and the
   // maximum size of a debug expression we can salvage up to, used for
   // performance reasons.
   const unsigned MaxDebugArgs = 16;
   const unsigned MaxExpressionSize = 128;
   bool Salvaged = false;
-
-  // We should never see debug intrinsics nowadays.
-  assert(DbgUsers.empty());
 
   for (auto *DVR : DPUsers) {
     if (DVR->isDbgAssign()) {
@@ -2359,15 +2331,10 @@ static bool rewriteDebugUsers(
     Instruction &From, Value &To, Instruction &DomPoint, DominatorTree &DT,
     function_ref<DbgValReplacement(DbgVariableRecord &DVR)> RewriteDVRExpr) {
   // Find debug users of From.
-  SmallVector<DbgVariableIntrinsic *, 1> Users;
   SmallVector<DbgVariableRecord *, 1> DPUsers;
-  findDbgUsers(Users, &From, &DPUsers);
-  if (Users.empty() && DPUsers.empty())
+  findDbgUsers(&From, DPUsers);
+  if (DPUsers.empty())
     return false;
-
-  // Ignore intrinsic-users: they are no longer supported and should never
-  // appear.
-  assert(Users.empty());
 
   // Prevent use-before-def of To.
   bool Changed = false;
@@ -3021,6 +2988,12 @@ static void combineMetadata(Instruction *K, const Instruction *J,
       case LLVMContext::MD_memprof:
       case LLVMContext::MD_callsite:
         break;
+      case LLVMContext::MD_callee_type:
+        if (!AAOnly) {
+          K->setMetadata(LLVMContext::MD_callee_type,
+                         MDNode::getMergedCalleeTypeMetadata(KMD, JMD));
+        }
+        break;
       case LLVMContext::MD_align:
         if (!AAOnly && (DoesKMove || !K->hasMetadata(LLVMContext::MD_noundef)))
           K->setMetadata(
@@ -3366,10 +3339,8 @@ void llvm::copyRangeMetadata(const DataLayout &DL, const LoadInst &OldLI,
 }
 
 void llvm::dropDebugUsers(Instruction &I) {
-  SmallVector<DbgVariableIntrinsic *, 1> DbgUsers;
   SmallVector<DbgVariableRecord *, 1> DPUsers;
-  findDbgUsers(DbgUsers, &I, &DPUsers);
-  assert(DbgUsers.empty());
+  findDbgUsers(&I, DPUsers);
   for (auto *DVR : DPUsers)
     DVR->eraseFromParent();
 }
