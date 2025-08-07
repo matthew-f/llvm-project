@@ -471,6 +471,8 @@ bool RISCVAsmBackend::writeNopData(raw_ostream &OS, uint64_t Count,
     Count -= 1;
   }
 
+  // TODO: emit a mapping symbol right here
+
   if (Count % 4 == 2) {
     // The canonical nop with Zca is c.nop.
     OS.write(STI->hasFeature(RISCV::FeatureStdExtZca) ? "\x01\0" : "\0\0", 2);
@@ -743,7 +745,7 @@ std::optional<bool> RISCVAsmBackend::evaluateFixup(const MCFragment &,
   if (!AUIPCTarget.getAddSym())
     return false;
 
-  const MCSymbolELF &SA = cast<MCSymbolELF>(*AUIPCTarget.getAddSym());
+  auto &SA = static_cast<const MCSymbolELF &>(*AUIPCTarget.getAddSym());
   if (SA.isUndefined())
     return false;
 
