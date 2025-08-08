@@ -23,6 +23,7 @@ add_clang_library(clangTidyCathexisModule
   QualityUseGbufviewCheck.cpp
   QualityUseNodiscardCheck.cpp
   QualityXmlSuspiciousFindoraddCheck.cpp
+  RedundantCStrCheck.cpp
   RefactorXmlConvertFindoraddToUpdateCheck.cpp
   RefactorXmlRenameUpdateCheck.cpp
   RefactorXmlUseFindoraddCheck.cpp

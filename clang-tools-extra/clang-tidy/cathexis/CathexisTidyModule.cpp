@@ -31,6 +31,7 @@
 #include "QualityUseGbufviewCheck.h"
 #include "QualityUseNodiscardCheck.h"
 #include "QualityXmlSuspiciousFindoraddCheck.h"
+#include "RedundantCStrCheck.h"
 #include "RefactorXmlConvertFindoraddToUpdateCheck.h"
 #include "RefactorXmlRenameUpdateCheck.h"
 #include "RefactorXmlUseFindoraddCheck.h"
@@ -86,6 +87,8 @@ public:
         "cathexis-quality-use-nodiscard");
     CheckFactories.registerCheck<QualityXmlSuspiciousFindoraddCheck>(
         "cathexis-quality-xml-suspicious-findoradd");
+    CheckFactories.registerCheck<RedundantCStrCheck>(
+        "cathexis-redundant-c-str");
     CheckFactories.registerCheck<RefactorXmlConvertFindoraddToUpdateCheck>(
         "cathexis-refactor-xml-convert-findoradd-to-update");
     CheckFactories.registerCheck<RefactorXmlRenameUpdateCheck>(
