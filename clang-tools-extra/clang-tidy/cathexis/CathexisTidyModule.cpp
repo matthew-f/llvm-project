@@ -14,6 +14,7 @@
 #include "AbseilWrappersCheck.h"
 #include "BannedCFunctionsCheck.h"
 #include "BugproneBufDataCheck.h"
+#include "QualitySmallHeapAllocationCheck.h"
 #include "QtStringQstringCheck.h"
 #include "QualityLongLambdaCheck.h"
 #include "NamingConventionsCheck.h"
@@ -56,6 +57,8 @@ public:
         "cathexis-banned-c-functions");
     CheckFactories.registerCheck<BugproneBufDataCheck>(
         "cathexis-bugprone-buf-data");
+    CheckFactories.registerCheck<QualitySmallHeapAllocationCheck>(
+        "cathexis-quality-small-heap-allocation");
     CheckFactories.registerCheck<QtStringQstringCheck>(
         "cathexis-qt-string-qstring");
     CheckFactories.registerCheck<QualityLongLambdaCheck>(
