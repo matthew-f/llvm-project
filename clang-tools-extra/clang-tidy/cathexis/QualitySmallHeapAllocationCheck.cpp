@@ -17,7 +17,7 @@ namespace clang::tidy::cathexis {
 void QualitySmallHeapAllocationCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(cxxNewExpr().bind("new"), this);
   Finder->addMatcher(callExpr(callee(functionDecl(hasAnyName(
-                                  "::std::make_unique", "::core::make_owned"))))
+                                  "::std::make_unique", "::make_shared" ,"::core::make_owned"))))
                          .bind("make"),
                      this);
 }
