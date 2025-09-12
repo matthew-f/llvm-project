@@ -462,8 +462,14 @@ bool NamingConventionsCheck::isValidVarName(std::string *warning,
   }
 
   if (name[0] == '_') {
-    *warning = "avoid leading '_' as it is reserved in some circumstances";
-    return false;
+
+    if (name == "__promise" && StringRef(var->getType().getAsString())
+                                   .starts_with("std::coroutine_traits")) {
+      // ignore
+    } else {
+      *warning = "avoid leading '_' as it is reserved in some circumstances";
+      return false;
+    }
   }
 
   std::string prefix = name.substr(0, 2);
