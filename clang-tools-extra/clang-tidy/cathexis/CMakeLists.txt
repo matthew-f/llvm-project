@@ -5,6 +5,7 @@ add_clang_library(clangTidyCathexisModule
   BannedCFunctionsCheck.cpp
   BugproneBufDataCheck.cpp
   CathexisTidyModule.cpp
+  NoNewCheck.cpp
   QualitySmallHeapAllocationCheck.cpp
   QtStringQstringCheck.cpp
   QualityLongLambdaCheck.cpp
