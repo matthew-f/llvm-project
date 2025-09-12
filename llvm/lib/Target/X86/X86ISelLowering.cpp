@@ -326,14 +326,12 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
   if (Subtarget.hasAVX10_2()) {
     setOperationAction(ISD::FP_TO_UINT_SAT, MVT::v2i32, Custom);
     setOperationAction(ISD::FP_TO_SINT_SAT, MVT::v2i32, Custom);
+    setOperationAction(ISD::FP_TO_UINT_SAT, MVT::v8i64, Legal);
+    setOperationAction(ISD::FP_TO_SINT_SAT, MVT::v8i64, Legal);
     for (MVT VT : {MVT::i32, MVT::v4i32, MVT::v8i32, MVT::v16i32, MVT::v2i64,
                    MVT::v4i64}) {
       setOperationAction(ISD::FP_TO_UINT_SAT, VT, Legal);
       setOperationAction(ISD::FP_TO_SINT_SAT, VT, Legal);
-    }
-    if (Subtarget.hasAVX10_2_512()) {
-      setOperationAction(ISD::FP_TO_UINT_SAT, MVT::v8i64, Legal);
-      setOperationAction(ISD::FP_TO_SINT_SAT, MVT::v8i64, Legal);
     }
     if (Subtarget.is64Bit()) {
       setOperationAction(ISD::FP_TO_UINT_SAT, MVT::i64, Legal);
@@ -2457,6 +2455,17 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
   }
 
   if (!Subtarget.useSoftFloat() && Subtarget.hasAVX10_2()) {
+    setOperationAction(ISD::FADD, MVT::v32bf16, Legal);
+    setOperationAction(ISD::FSUB, MVT::v32bf16, Legal);
+    setOperationAction(ISD::FMUL, MVT::v32bf16, Legal);
+    setOperationAction(ISD::FDIV, MVT::v32bf16, Legal);
+    setOperationAction(ISD::FSQRT, MVT::v32bf16, Legal);
+    setOperationAction(ISD::FMA, MVT::v32bf16, Legal);
+    setOperationAction(ISD::SETCC, MVT::v32bf16, Custom);
+    setOperationAction(ISD::FMINIMUM, MVT::v32bf16, Custom);
+    setOperationAction(ISD::FMAXIMUM, MVT::v32bf16, Custom);
+    setOperationAction(ISD::FMINIMUMNUM, MVT::v32bf16, Custom);
+    setOperationAction(ISD::FMAXIMUMNUM, MVT::v32bf16, Custom);
     for (auto VT : {MVT::v8bf16, MVT::v16bf16}) {
       setOperationAction(ISD::FADD, VT, Legal);
       setOperationAction(ISD::FSUB, VT, Legal);
@@ -2469,19 +2478,6 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
       setOperationAction(ISD::FMAXIMUM, VT, Custom);
       setOperationAction(ISD::FMINIMUMNUM, VT, Custom);
       setOperationAction(ISD::FMAXIMUMNUM, VT, Custom);
-    }
-    if (Subtarget.hasAVX10_2_512()) {
-      setOperationAction(ISD::FADD, MVT::v32bf16, Legal);
-      setOperationAction(ISD::FSUB, MVT::v32bf16, Legal);
-      setOperationAction(ISD::FMUL, MVT::v32bf16, Legal);
-      setOperationAction(ISD::FDIV, MVT::v32bf16, Legal);
-      setOperationAction(ISD::FSQRT, MVT::v32bf16, Legal);
-      setOperationAction(ISD::FMA, MVT::v32bf16, Legal);
-      setOperationAction(ISD::SETCC, MVT::v32bf16, Custom);
-      setOperationAction(ISD::FMINIMUM, MVT::v32bf16, Custom);
-      setOperationAction(ISD::FMAXIMUM, MVT::v32bf16, Custom);
-      setOperationAction(ISD::FMINIMUMNUM, MVT::v32bf16, Custom);
-      setOperationAction(ISD::FMAXIMUMNUM, MVT::v32bf16, Custom);
     }
     for (auto VT : {MVT::f16, MVT::f32, MVT::f64}) {
       setCondCodeAction(ISD::SETOEQ, VT, Custom);
@@ -31414,9 +31410,7 @@ static SDValue LowerRotate(SDValue Op, const X86Subtarget &Subtarget,
     return R;
 
   // AVX512 implicitly uses modulo rotation amounts.
-  if ((Subtarget.hasVLX() ||
-       (Subtarget.hasAVX512() && Subtarget.hasEVEX512())) &&
-      32 <= EltSizeInBits) {
+  if ((Subtarget.hasVLX() || Subtarget.hasAVX512()) && 32 <= EltSizeInBits) {
     // Attempt to rotate by immediate.
     if (IsCstSplat) {
       unsigned RotOpc = IsROTL ? X86ISD::VROTLI : X86ISD::VROTRI;
@@ -44964,7 +44958,7 @@ bool X86TargetLowering::SimplifyDemandedBitsForTargetNode(
   }
   case X86ISD::VPMADD52L:
   case X86ISD::VPMADD52H: {
-    KnownBits KnownOp0, KnownOp1;
+    KnownBits KnownOp0, KnownOp1, KnownOp2;
     SDValue Op0 = Op.getOperand(0);
     SDValue Op1 = Op.getOperand(1);
     SDValue Op2 = Op.getOperand(2);
@@ -44977,6 +44971,10 @@ bool X86TargetLowering::SimplifyDemandedBitsForTargetNode(
 
     if (SimplifyDemandedBits(Op1, Low52Bits, OriginalDemandedElts, KnownOp1,
                              TLO, Depth + 1))
+      return true;
+
+    if (SimplifyDemandedBits(Op2, APInt::getAllOnes(64), OriginalDemandedElts,
+                             KnownOp2, TLO, Depth + 1))
       return true;
 
     KnownBits KnownMul;
@@ -44993,8 +44991,8 @@ bool X86TargetLowering::SimplifyDemandedBitsForTargetNode(
       return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::ADD, DL, VT, C, Op2));
     }
 
-    // TODO: Compute the known bits for VPMADD52L/VPMADD52H.
-    break;
+    Known = KnownBits::add(KnownMul, KnownOp2);
+    return false;
   }
   }
 
@@ -50959,15 +50957,13 @@ static SDValue PromoteMaskArithmetic(SDValue N, const SDLoc &DL, EVT VT,
   if (SDValue NN0 = PromoteMaskArithmetic(N0, DL, VT, DAG, Depth + 1))
     N0 = NN0;
   else {
-    // The left side has to be a trunc.
-    if (N0.getOpcode() != ISD::TRUNCATE)
+    // The left side has to be a 'trunc'.
+    bool LHSTrunc = N0.getOpcode() == ISD::TRUNCATE &&
+                    N0.getOperand(0).getValueType() == VT;
+    if (LHSTrunc)
+      N0 = N0.getOperand(0);
+    else
       return SDValue();
-
-    // The type of the truncated inputs.
-    if (N0.getOperand(0).getValueType() != VT)
-      return SDValue();
-
-    N0 = N0.getOperand(0);
   }
 
   if (SDValue NN1 = PromoteMaskArithmetic(N1, DL, VT, DAG, Depth + 1))
