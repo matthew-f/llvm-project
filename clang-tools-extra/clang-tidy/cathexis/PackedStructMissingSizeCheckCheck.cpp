@@ -25,7 +25,7 @@ void PackedStructMissingSizeCheckCheck::registerMatchers(MatchFinder *Finder) {
                     hasAttr(clang::attr::MaxFieldAlignment), //
                     unless(allOf(isUnion(), hasName("(anonymous)"))),
                     unless(hasDescendant(cxxMethodDecl(
-                        anyOf(hasName("internalCheckSizeEquals"),
+                        anyOf(matchesName("internalCheckSizeEquals"),
                               hasName("internalCheckSizeLessOrEqual"))))))
           .bind("decl"),
       this);
