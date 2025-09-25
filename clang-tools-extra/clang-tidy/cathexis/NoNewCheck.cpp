@@ -39,6 +39,11 @@ void NoNewCheck::check(const MatchFinder::MatchResult &Result) {
   if (cxxRecordDecl != nullptr) {
 
     if (isDerivedFrom(Result, cxxRecordDecl, {"QObject"}) ||
+				isDerivedFrom(Result, cxxRecordDecl, {"QLayoutItem"}) ||
+				isDerivedFrom(Result, cxxRecordDecl, {"QListWidgetItem"}) ||
+				isDerivedFrom(Result, cxxRecordDecl, {"QStandardItem"}) ||
+				isDerivedFrom(Result, cxxRecordDecl, {"QTreeWidgetItem"}) ||
+				isDerivedFrom(Result, cxxRecordDecl, {"QTableWidgetItem"}) ||
         isDerivedFrom(Result, cxxRecordDecl, {"NS_QT3", "Q3ListViewItem"})) {
       return;
     }
