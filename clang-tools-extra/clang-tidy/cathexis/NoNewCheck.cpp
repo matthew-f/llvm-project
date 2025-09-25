@@ -38,25 +38,43 @@ void NoNewCheck::check(const MatchFinder::MatchResult &Result) {
   const auto *cxxRecordDecl = qualType.getTypePtr()->getAsCXXRecordDecl();
   if (cxxRecordDecl != nullptr) {
 
-    IdentifierInfo &ii = Result.Context->Idents.get("QObject");
-    DeclarationName base_name(&ii);
-
-    auto lookup = Result.Context->getTranslationUnitDecl()->lookup(base_name);
-
-    const CXXRecordDecl *qobject_decl = nullptr;
-    for (NamedDecl *nd : lookup) {
-      if (const auto *rd = dyn_cast<CXXRecordDecl>(nd)) {
-        qobject_decl = rd->getDefinition();
-        break;
-      }
-    }
-
-    if (qobject_decl != nullptr && cxxRecordDecl->isDerivedFrom(qobject_decl)) {
+    if (isDerivedFrom(Result, cxxRecordDecl, {"QObject"}) ||
+        isDerivedFrom(Result, cxxRecordDecl, {"NS_QT3", "Q3ListViewItem"})) {
       return;
     }
   }
 
   diag(location, "Avoid 'new' of '%0'") << qualType.getAsString();
+}
+
+bool NoNewCheck::isDerivedFrom(const MatchFinder::MatchResult &Result,
+                               const CXXRecordDecl *decl,
+                               const std::vector<std::string> &parts) const {
+
+  // This walks the AST through the namespaces (!!)
+  DeclContext *context = Result.Context->getTranslationUnitDecl();
+  for (size_t i = 0; i < parts.size(); ++i) {
+    auto res =
+        context->lookup(DeclarationName(&Result.Context->Idents.get(parts[i])));
+    if (res.empty()) {
+      return false;
+    }
+
+    context = dyn_cast<DeclContext>(res.front());
+    if (context == nullptr) {
+      return false;
+    }
+  }
+
+  const auto *cxxRecordDecl = dyn_cast<CXXRecordDecl>(context);
+  if (cxxRecordDecl == nullptr) {
+    return false;
+  }
+
+  const CXXRecordDecl *baseDecl = cxxRecordDecl->getDefinition();
+
+  return baseDecl != nullptr &&
+         (decl == baseDecl || decl->isDerivedFrom(baseDecl));
 }
 
 } // namespace clang::tidy::cathexis

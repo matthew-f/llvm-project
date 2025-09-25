@@ -27,6 +27,11 @@ public:
   bool isLanguageVersionSupported(const LangOptions &LangOpts) const override {
     return LangOpts.CPlusPlus;
   }
+
+private:
+  bool isDerivedFrom(const ast_matchers::MatchFinder::MatchResult &Result,
+                     const CXXRecordDecl *,
+                     const std::vector<std::string> &) const;
 };
 
 } // namespace clang::tidy::cathexis
