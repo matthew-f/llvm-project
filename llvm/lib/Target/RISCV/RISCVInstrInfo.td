@@ -1653,17 +1653,18 @@ def riscv_selectcc_frag : PatFrag<(ops node:$lhs, node:$rhs, node:$cc,
                                                   node:$falsev), [{}],
                                   IntCCtoRISCVCC>;
 
-multiclass SelectCC_GPR_rrirr<DAGOperand valty, ValueType vt> {
+multiclass SelectCC_GPR_rrirr<DAGOperand valty, ValueType vt,
+                              ValueType cmpvt = XLenVT> {
   let usesCustomInserter = 1 in
   def _Using_CC_GPR : Pseudo<(outs valty:$dst),
                              (ins GPR:$lhs, GPR:$rhs, cond_code:$cc,
                               valty:$truev, valty:$falsev),
                              [(set valty:$dst,
-                               (riscv_selectcc_frag:$cc (XLenVT GPR:$lhs), GPR:$rhs, cond,
+                               (riscv_selectcc_frag:$cc (cmpvt GPR:$lhs), GPR:$rhs, cond,
                                                         (vt valty:$truev), valty:$falsev))]>;
   // Explicitly select 0 in the condition to X0. The register coalescer doesn't
   // always do it.
-  def : Pat<(riscv_selectcc_frag:$cc (XLenVT GPR:$lhs), 0, cond, (vt valty:$truev),
+  def : Pat<(riscv_selectcc_frag:$cc (cmpvt GPR:$lhs), 0, cond, (vt valty:$truev),
                                      valty:$falsev),
             (!cast<Instruction>(NAME#"_Using_CC_GPR") GPR:$lhs, (XLenVT X0),
              (IntCCtoRISCVCC $cc), valty:$truev, valty:$falsev)>;
@@ -1980,7 +1981,7 @@ def : LdPat<sextloadi8, LB>;
 def : LdPat<extloadi8, LBU>; // Prefer unsigned due to no c.lb in Zcb.
 def : LdPat<sextloadi16, LH>;
 def : LdPat<extloadi16, LH>;
-def : LdPat<load, LW, i32>;
+def : LdPat<load, LW, i32>, Requires<[IsRV32]>;
 def : LdPat<zextloadi8, LBU>;
 def : LdPat<zextloadi16, LHU>;
 
@@ -1994,7 +1995,7 @@ class StPat<PatFrag StoreOp, RVInst Inst, RegisterClass StTy,
 
 def : StPat<truncstorei8, SB, GPR, XLenVT>;
 def : StPat<truncstorei16, SH, GPR, XLenVT>;
-def : StPat<store, SW, GPR, i32>;
+def : StPat<store, SW, GPR, i32>, Requires<[IsRV32]>;
 
 /// Fences
 
