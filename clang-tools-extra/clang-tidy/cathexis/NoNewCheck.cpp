@@ -44,7 +44,7 @@ void NoNewCheck::check(const MatchFinder::MatchResult &Result) {
 				isDerivedFrom(Result, cxxRecordDecl, {"QStandardItem"}) ||
 				isDerivedFrom(Result, cxxRecordDecl, {"QTreeWidgetItem"}) ||
 				isDerivedFrom(Result, cxxRecordDecl, {"QTableWidgetItem"}) ||
-        isDerivedFrom(Result, cxxRecordDecl, {"NS_QT3", "Q3ListViewItem"})) {
+        isDerivedFrom(Result, cxxRecordDecl, {"qt3", "Q3ListViewItem"})) {
       return;
     }
   }
