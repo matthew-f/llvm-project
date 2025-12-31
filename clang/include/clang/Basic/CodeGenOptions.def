@@ -364,6 +364,8 @@ VALUE_CODEGENOPT(WarnStackSize     , 32, UINT_MAX, Benign) ///< Set via -fwarn-s
 CODEGENOPT(NoStackArgProbe, 1, 0, Benign) ///< Set when -mno-stack-arg-probe is used
 CODEGENOPT(EmitLLVMUseLists, 1, 0, Benign) ///< Control whether to serialize use-lists.
 
+CODEGENOPT(DevirtualizeSpeculatively, 1, 0, Benign) ///< Whether to apply the speculative
+                                                    /// devirtualization optimization.
 CODEGENOPT(WholeProgramVTables, 1, 0, Benign) ///< Whether to apply whole-program
                                               ///  vtable optimization.
 
@@ -475,10 +477,6 @@ ENUM_CODEGENOPT(ZeroCallUsedRegs, ZeroCallUsedRegsKind,
 /// non-deleting destructors. (No effect on Microsoft ABI.)
 CODEGENOPT(CtorDtorReturnThis, 1, 0, Benign)
 
-/// Set via -Xclang -sloppy-temporary-lifetimes to disable emission of lifetime
-/// marker intrinsic calls.
-CODEGENOPT(NoLifetimeMarkersForTemporaries, 1, 0, Benign)
-
 /// Enables emitting Import Call sections on supported targets that can be used
 /// by the Windows kernel to enable import call optimization.
 CODEGENOPT(ImportCallOptimization, 1, 0, Benign)
@@ -487,8 +485,11 @@ CODEGENOPT(ImportCallOptimization, 1, 0, Benign)
 /// (BlocksRuntime) on Windows.
 CODEGENOPT(StaticClosure, 1, 0, Benign)
 
-/// Assume that UAVs/SRVs may alias
+/// Assume that UAVs/SRVs may alias if enabled
 CODEGENOPT(ResMayAlias, 1, 0, Benign)
+
+/// Assume that all resources are bound if enabled
+CODEGENOPT(AllResourcesBound, 1, 0, Benign)
 
 /// Controls how unwind v2 (epilog) information should be generated for x64
 /// Windows.
