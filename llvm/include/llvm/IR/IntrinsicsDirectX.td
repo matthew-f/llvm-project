@@ -126,6 +126,16 @@ def int_dx_resource_load_level
                              llvm_any_ty],
                             [IntrReadMem]>;
 
+def int_dx_resource_calculate_lod
+    : DefaultAttrsIntrinsic<[llvm_float_ty],
+                            [llvm_any_ty, llvm_any_ty, llvm_any_ty],
+                            [IntrReadMem]>;
+
+def int_dx_resource_calculate_lod_unclamped
+    : DefaultAttrsIntrinsic<[llvm_float_ty],
+                            [llvm_any_ty, llvm_any_ty, llvm_any_ty],
+                            [IntrReadMem]>;
+
 def int_dx_resource_samplecmp
     : DefaultAttrsIntrinsic<[llvm_any_ty],
                             [llvm_any_ty, llvm_any_ty, llvm_any_ty,
@@ -270,6 +280,9 @@ def int_dx_ddy_fine : DefaultAttrsIntrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0
 def int_dx_firstbituhigh : DefaultAttrsIntrinsic<[LLVMScalarOrSameVectorWidth<0, llvm_i32_ty>], [llvm_anyint_ty], [IntrNoMem]>;
 def int_dx_firstbitshigh : DefaultAttrsIntrinsic<[LLVMScalarOrSameVectorWidth<0, llvm_i32_ty>], [llvm_anyint_ty], [IntrNoMem]>;
 def int_dx_firstbitlow : DefaultAttrsIntrinsic<[LLVMScalarOrSameVectorWidth<0, llvm_i32_ty>], [llvm_anyint_ty], [IntrNoMem]>;
+
+def int_dx_group_memory_barrier
+    : DefaultAttrsIntrinsic<[], [], [IntrConvergent]>;
 
 def int_dx_group_memory_barrier_with_group_sync
     : DefaultAttrsIntrinsic<[], [], [IntrConvergent]>;
