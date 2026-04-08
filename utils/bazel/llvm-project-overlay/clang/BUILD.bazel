@@ -2029,6 +2029,10 @@ cc_library(
         "include",
         "lib/DirectoryWatcher",
     ],
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-framework,CoreServices"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//llvm:Support",
     ],
@@ -2136,6 +2140,7 @@ cc_library(
         ":options",
         ":rewrite",
         ":sema",
+        ":serialization",
         ":tooling",
         ":unified_symbol_resolution",
         "//llvm:BitstreamReader",
@@ -2170,6 +2175,7 @@ cc_plugin_library(
         ":options",
         ":rewrite",
         ":sema",
+        ":serialization",
         ":tooling",
         ":unified_symbol_resolution",
         "//llvm:BitstreamReader",
