@@ -1836,8 +1836,14 @@ struct NonBlockDoConstructParser {
     // Keep parsing ExecutionPartConstructs until the set of open label-do
     // statements becomes empty, or until the EPC parser fails.
     auto processEpc{[&](ExecutionPartConstruct &&epc) {
+      // The parsed epc may be a construct. In such case, get the final
+      // label from it.
       if (auto &&label{GetStatementLabel(epc)}) {
         labels.erase(*label);
+      } else if (auto *omp{Unwrap<OpenMPConstruct>(epc)}) {
+        if (auto &&label{GetFinalLabel(*omp)}) {
+          labels.erase(*label);
+        }
       }
       if (auto *labelDo{Unwrap<LabelDoStmt>(epc)}) {
         labels.insert(std::get<Label>(labelDo->t));
@@ -2042,26 +2048,26 @@ struct OmpLoopConstructParser {
       if (assoc == llvm::omp::Association::LoopNest) {
         if (auto &&item{attempt(loopItem).Parse(state)}) {
           auto end{maybe(OmpEndDirectiveParser{loopDir}).Parse(state)};
-          return OpenMPLoopConstruct{OmpBeginLoopDirective(std::move(*begin)),
+          return OpenMPLoopConstruct{OmpBeginDirective(std::move(*begin)),
               std::move(*item),
               llvm::transformOptional(std::move(*end),
-                  [](auto &&s) { return OmpEndLoopDirective(std::move(s)); })};
+                  [](auto &&s) { return OmpEndDirective(std::move(s)); })};
         } else if (auto &&empty{pure<Block>().Parse(state)}) {
           // Allow empty body.
           auto end{maybe(OmpEndDirectiveParser{loopDir}).Parse(state)};
-          return OpenMPLoopConstruct{OmpBeginLoopDirective(std::move(*begin)),
+          return OpenMPLoopConstruct{OmpBeginDirective(std::move(*begin)),
               std::move(*empty),
               llvm::transformOptional(std::move(*end),
-                  [](auto &&s) { return OmpEndLoopDirective(std::move(s)); })};
+                  [](auto &&s) { return OmpEndDirective(std::move(s)); })};
         }
       } else if (assoc == llvm::omp::Association::LoopSeq) {
         // Parse loop sequence as a block.
         if (auto &&body{validBlock.Parse(state)}) {
           auto end{maybe(OmpEndDirectiveParser{loopDir}).Parse(state)};
-          return OpenMPLoopConstruct{OmpBeginLoopDirective(std::move(*begin)),
+          return OpenMPLoopConstruct{OmpBeginDirective(std::move(*begin)),
               std::move(*body),
               llvm::transformOptional(std::move(*end),
-                  [](auto &&s) { return OmpEndLoopDirective(std::move(s)); })};
+                  [](auto &&s) { return OmpEndDirective(std::move(s)); })};
         }
       } else {
         llvm_unreachable("Unexpected association");
@@ -2524,6 +2530,7 @@ static constexpr DirectiveSet GetLoopDirectives() {
       unsigned(Directive::OMPD_master_taskloop_simd),
       unsigned(Directive::OMPD_parallel_do),
       unsigned(Directive::OMPD_parallel_do_simd),
+      unsigned(Directive::OMPD_parallel_loop),
       unsigned(Directive::OMPD_parallel_masked_taskloop),
       unsigned(Directive::OMPD_parallel_masked_taskloop_simd),
       unsigned(Directive::OMPD_parallel_master_taskloop),
