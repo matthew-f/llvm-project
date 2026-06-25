@@ -81,8 +81,8 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
   static const llvm::StringSet second_macros = {
       "CHECKF",
       "CHECKF_M",
-      "GASSERT_OPT",
-      "GASSERT_OPT_M",
+      //"GASSERTF_M",
+      //"GASSERT_OPT_M",
   };
 
   if (!first_macros.contains(Current) && !second_macros.contains(Current)) {
