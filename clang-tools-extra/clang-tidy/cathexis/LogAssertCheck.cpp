@@ -18,6 +18,20 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::cathexis {
 namespace {
 
+bool onlyWhitespaceAndSemicolons(StringRef Text) {
+  for (char C : Text) {
+    if (llvm::isSpace(C))
+      continue;
+
+    if (C == ';')
+      continue;
+
+    return false;
+  }
+
+  return true;
+}
+
 class LogAssertCallbacks : public PPCallbacks {
 public:
   LogAssertCallbacks(ClangTidyCheck &Check, SourceManager &SM,
@@ -28,12 +42,18 @@ public:
                     SourceRange, const MacroArgs *) override;
 
 private:
+  void resetPrevious() {
+    PreviousEndLoc = {};
+    PreviousMacro.clear();
+  }
+
+private:
   ClangTidyCheck &Check;
   SourceManager &SM;
   const LangOptions &LangOpts;
 
   std::string PreviousMacro;
-  SourceLocation PreviousLoc;
+  SourceLocation PreviousEndLoc;
 };
 
 void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
@@ -66,7 +86,7 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
   };
 
   if (!first_macros.contains(Current) && !second_macros.contains(Current)) {
-    PreviousMacro.clear();
+    resetPrevious();
     return;
   }
 
@@ -110,15 +130,30 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
     std::string name = std::string(SM.getCharacterData(token->getLocation()),
                                    token->getLength());
 
-    if (name == "NORM")
+    if (name == "NORM") {
+      resetPrevious();
       return;
+    }
+  }
+
+  if (PreviousEndLoc.isValid()) {
+    CharSourceRange Between =
+        CharSourceRange::getCharRange(PreviousEndLoc.getLocWithOffset(1), Loc);
+    StringRef Text = Lexer::getSourceText(Between, SM, LangOpts);
+
+    if (!onlyWhitespaceAndSemicolons(Text)) {
+      {
+        resetPrevious();
+        return;
+      }
+    }
   }
 
   if (first_macros.contains(PreviousMacro) && second_macros.contains(Current))
     Check.diag(Loc, PreviousMacro + " immediately followed by " + Current);
 
   PreviousMacro = Current;
-  PreviousLoc = Loc;
+  PreviousEndLoc = Range.getEnd();
 }
 } // namespace
 
