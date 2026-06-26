@@ -100,7 +100,7 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
     return;
 
   // llvm::errs() << "Checking '" << Current << "' at " << Loc.printToString(SM)
-  //              << "\n";
+  //              << " (PreviousMacro=" << PreviousMacro << "\n";
 
   if (PreviousMacro.empty()) {
     // Checking for the first CLog/CLogF macro
@@ -127,9 +127,11 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
     return;
   }
 
-  CharSourceRange Between =
-      CharSourceRange::getCharRange(PreviousEndLoc.getLocWithOffset(1), Loc);
-  StringRef Text = Lexer::getSourceText(Between, SM, LangOpts);
+  StringRef Text = Lexer::getSourceText(
+      CharSourceRange::getCharRange(
+          SM.getExpansionLoc(PreviousEndLoc.getLocWithOffset(1)),
+          SM.getExpansionLoc(Loc)),
+      SM, LangOpts);
 
   if (!onlyWhitespaceAndSemicolons(Text)) {
     {
