@@ -75,7 +75,8 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
 
   SourceLocation Loc = MacroNameTok.getLocation();
 
-  if (Current == "CDebug" || Current == "CDebugF") {
+  if (SM.isWrittenInMainFile(Loc) &&
+      (Current == "CDebug" || Current == "CDebugF")) {
     WaitForLogAfterDebug = true;
     return;
   }
@@ -96,9 +97,13 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
   } else if (!SM.isWrittenInMainFile(Loc))
     return;
 
-  //  llvm::errs() << "Checking '" << Current << "'\n";
+  // llvm::errs() << "Checking '" << Current << "' at " << Loc.printToString(SM)
+  //              << "\n";
 
-  if (!first_macros.contains(Current) && !second_macros.contains(Current)) {
+  if (PreviousMacro.empty() && !first_macros.contains(Current))
+    return;
+
+  if (!PreviousMacro.empty() && !second_macros.contains(Current)) {
     resetPrevious();
     return;
   }
