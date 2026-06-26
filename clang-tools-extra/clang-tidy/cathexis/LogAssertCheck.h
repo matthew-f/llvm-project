@@ -19,13 +19,10 @@ namespace clang::tidy::cathexis {
 /// https://clang.llvm.org/extra/clang-tidy/checks/cathexis/log-assert.html
 class LogAssertCheck : public ClangTidyCheck {
 public:
-  LogAssertCheck(StringRef Name, ClangTidyContext *Context)
-      : ClangTidyCheck(Name, Context) {}
+  LogAssertCheck(StringRef Name, ClangTidyContext *Context);
 
-	void registerPPCallbacks(
-													 const SourceManager &SM,
-													 Preprocessor *PP,
-													 Preprocessor *ModuleExpanderPP) override;
+  void registerPPCallbacks(const SourceManager &SM, Preprocessor *PP,
+                           Preprocessor *ModuleExpanderPP) override;
 
   bool isLanguageVersionSupported(const LangOptions &LangOpts) const override {
     return LangOpts.CPlusPlus;
