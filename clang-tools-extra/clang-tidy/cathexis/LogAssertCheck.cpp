@@ -60,6 +60,7 @@ private:
   std::string PreviousMacro;
   SourceLocation PreviousEndLoc;
   bool WaitForLogAfterDebug = false;
+  bool WaitForCHECKF = false;
 };
 
 //----------------------------------------------------------------------//
@@ -89,6 +90,7 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
   static const llvm::StringSet<> second_macros = {
       "CHECKF",
       "CHECKF_M",
+      "CHECKF_VA",
   };
 
   if (WaitForLogAfterDebug && first_macros.contains(Current)) {
@@ -100,44 +102,47 @@ void LogAssertCallbacks::MacroExpands(const Token &MacroNameTok,
   // llvm::errs() << "Checking '" << Current << "' at " << Loc.printToString(SM)
   //              << "\n";
 
-  if (PreviousMacro.empty() && !first_macros.contains(Current))
-    return;
+  if (PreviousMacro.empty()) {
+    // Checking for the first CLog/CLogF macro
 
-  if (!PreviousMacro.empty() && !second_macros.contains(Current)) {
-    resetPrevious();
-    return;
-  }
+    if (!first_macros.contains(Current))
+      return;
 
-  if (Args != nullptr && Args->getNumMacroArguments() > 0) {
     const auto *token = Args->getUnexpArgument(0);
     std::string name = std::string(SM.getCharacterData(token->getLocation()),
                                    token->getLength());
 
-    if (name != "INFO" && name != "WARN" && name != "CRIT") {
+    if (name != "INFO" && name != "WARN" && name != "CRIT")
+      return;
+
+    PreviousMacro = Current;
+    PreviousEndLoc = Range.getEnd();
+    return;
+  }
+
+  // Previous is set - check for valid second macro
+
+  if (!second_macros.contains(Current)) {
+    resetPrevious();
+    return;
+  }
+
+  CharSourceRange Between =
+      CharSourceRange::getCharRange(PreviousEndLoc.getLocWithOffset(1), Loc);
+  StringRef Text = Lexer::getSourceText(Between, SM, LangOpts);
+
+  if (!onlyWhitespaceAndSemicolons(Text)) {
+    {
       resetPrevious();
       return;
     }
   }
 
-  if (PreviousEndLoc.isValid()) {
-    CharSourceRange Between =
-        CharSourceRange::getCharRange(PreviousEndLoc.getLocWithOffset(1), Loc);
-    StringRef Text = Lexer::getSourceText(Between, SM, LangOpts);
-
-    if (!onlyWhitespaceAndSemicolons(Text)) {
-      {
-        resetPrevious();
-        return;
-      }
-    }
-  }
-
-  if (first_macros.contains(PreviousMacro) && second_macros.contains(Current))
-    Check.diag(Loc, PreviousMacro + " immediately followed by " + Current);
-
-  PreviousMacro = Current;
-  PreviousEndLoc = Range.getEnd();
+  Check.diag(Loc, PreviousMacro + " immediately followed by " + Current +
+                      ". Rather combine the log message into the CHECKF");
+  resetPrevious();
 }
+
 } // namespace
 
 //----------------------------------------------------------------------//
