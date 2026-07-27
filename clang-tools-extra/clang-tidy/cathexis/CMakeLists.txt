@@ -6,6 +6,7 @@ add_clang_library(clangTidyCathexisModule
   BugproneBufDataCheck.cpp
   CathexisTidyModule.cpp
   CheckedNewCheck.cpp
+  FilesystemPathCheck.cpp
   LogAssertCheck.cpp
   NoNewCheck.cpp
   QualitySmallHeapAllocationCheck.cpp

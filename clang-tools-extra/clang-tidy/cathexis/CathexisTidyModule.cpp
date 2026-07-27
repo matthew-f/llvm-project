@@ -15,6 +15,7 @@
 #include "BannedCFunctionsCheck.h"
 #include "BugproneBufDataCheck.h"
 #include "CheckedNewCheck.h"
+#include "FilesystemPathCheck.h"
 #include "LogAssertCheck.h"
 #include "NoNewCheck.h"
 #include "QualitySmallHeapAllocationCheck.h"
@@ -62,6 +63,8 @@ public:
         "cathexis-bugprone-buf-data");
     CheckFactories.registerCheck<CheckedNewCheck>(
         "cathexis-checked-new");
+    CheckFactories.registerCheck<FilesystemPathCheck>(
+        "cathexis-filesystem-path");
     CheckFactories.registerCheck<LogAssertCheck>(
         "cathexis-log-assert");
     CheckFactories.registerCheck<NoNewCheck>(
