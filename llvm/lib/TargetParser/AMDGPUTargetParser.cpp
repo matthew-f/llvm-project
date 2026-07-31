@@ -18,6 +18,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include <array>
+#include <cassert>
 
 using namespace llvm;
 using namespace AMDGPU;
@@ -142,6 +143,17 @@ constexpr std::array<StringTable::Offset, NumAMDGPUSubArches>
         Map[Entry.SubArch - Triple::FirstAMDGPUSubArch] = Entry.NameOffset;
       return Map;
     }();
+
+// SubArch -> triple-name-offset (e.g. "amdgpu9.00"), like
+// AMDGPUSubArchNameOffsets.
+constexpr std::array<StringTable::Offset, NumAMDGPUSubArches>
+    AMDGPUSubArchTripleNameOffsets = [] {
+      std::array<StringTable::Offset, NumAMDGPUSubArches> Map{};
+      for (const AMDGPUSubArchNameEntry &Entry : AMDGPUSubArchNames)
+        Map[Entry.SubArch - Triple::FirstAMDGPUSubArch] =
+            Entry.TripleNameOffset;
+      return Map;
+    }();
 } // namespace
 
 StringRef llvm::AMDGPU::getArchFamilyNameAMDGCN(GPUKind AK) {
@@ -262,6 +274,17 @@ StringRef llvm::AMDGPU::getArchNameFromSubArch(Triple::SubArchType SubArch) {
     return "";
   return AMDGPUNameStrTab[AMDGPUSubArchNameOffsets[SubArch -
                                                    Triple::FirstAMDGPUSubArch]];
+}
+
+StringRef llvm::AMDGPU::getSubArchName(Triple::SubArchType SubArch) {
+  if (SubArch == Triple::NoSubArch)
+    return AMDGPUNameStrTab[AMDGPUNoSubArchNameOffset];
+
+  assert(SubArch >= Triple::FirstAMDGPUSubArch &&
+         SubArch <= Triple::LastAMDGPUSubArch &&
+         "expected an AMDGPU subarch or NoSubArch");
+  return AMDGPUNameStrTab
+      [AMDGPUSubArchTripleNameOffsets[SubArch - Triple::FirstAMDGPUSubArch]];
 }
 
 StringRef llvm::AMDGPU::getArchNameR600(GPUKind AK) {
@@ -477,12 +500,14 @@ static void fillAMDGCNFeatureMap(StringRef GPU, const Triple &T,
     Features["gfx12-insts"] = true;
     Features["gfx1250-insts"] = true;
     Features["gfx13-insts"] = true;
+    Features["flat-global-insts"] = true;
     Features["bitop3-insts"] = true;
     Features["prng-inst"] = true;
     Features["tanh-insts"] = true;
     Features["tensor-cvt-lut-insts"] = true;
     Features["bf16-trans-insts"] = true;
     Features["bf16-cvt-insts"] = true;
+    Features["cvt-sr-pk-bf16-f32-inst"] = true;
     Features["bf16-pk-insts"] = true;
     Features["fp8-conversion-insts"] = true;
     Features["permlane16-swap"] = true;
@@ -493,6 +518,8 @@ static void fillAMDGCNFeatureMap(StringRef GPU, const Triple &T,
     Features["atomic-flat-pk-add-16-insts"] = true;
     Features["atomic-global-pk-add-bf16-inst"] = true;
     Features["atomic-ds-pk-add-16-insts"] = true;
+    Features["atomic-fmin-fmax-global-f32"] = true;
+    Features["atomic-fmin-fmax-global-f64"] = true;
     Features["s-wakeup-barrier-inst"] = true;
     Features["f16bf16-to-fp6bf6-cvt-scale-insts"] = true;
     Features["f32-to-fp6bf6-cvt-scale-insts"] = true;
@@ -501,6 +528,7 @@ static void fillAMDGCNFeatureMap(StringRef GPU, const Triple &T,
     Features["lerp-inst"] = true;
     Features["sad-insts"] = true;
     Features["qsad-insts"] = true;
+    Features["mqsad-pk-insts"] = true;
     Features["cvt-pknorm-vop2-insts"] = true;
     Features["cvt-pknorm-vop3-insts"] = true;
     Features["image-insts"] = true;
@@ -544,6 +572,7 @@ static void fillAMDGCNFeatureMap(StringRef GPU, const Triple &T,
     Features["transpose-load-f4f6-insts"] = true;
     Features["bf16-trans-insts"] = true;
     Features["bf16-cvt-insts"] = true;
+    Features["cvt-sr-pk-bf16-f32-inst"] = true;
     Features["bf16-pk-insts"] = true;
     Features["fp8-conversion-insts"] = true;
     Features["fp8e5m3-insts"] = true;
