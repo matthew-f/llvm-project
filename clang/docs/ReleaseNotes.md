@@ -365,6 +365,7 @@ features cannot lower the translation-unit ABI level;
 - Fixed a bug where `__func__`, `__PRETTY_FUNCTION__` and `__FUNCTION__` were not resolving to the proper function when inside a lambda return type (#GH211811)
 - Fixed USR generation for declarations whose signature mentions a class-type
   non-type template parameter. (#GH212351)
+- Clang now defines the GCC-compatible predefined macro `__SIG_ATOMIC_TYPE__`. (#GH213895)
 
 #### Bug Fixes to Compiler Builtins
 
@@ -417,6 +418,12 @@ features cannot lower the translation-unit ABI level;
 - A workaround that was introduced to fix an issue with the `<format>` header present in some versions of
   libstdc++15 has been extended to support preprocessed input. Previously, splitting the preprocessing and
   compilation step would result in the fix not being applied. (#GH160314)
+
+- A defaulted copy or move assignment operator for a union was left with an
+  empty body and copied nothing when the operator was actually called, for
+  example through a pointer to member. Clang now synthesizes a whole-object
+  copy so the union's object representation is copied, matching the defaulted
+  union copy constructor.
 
 #### Bug Fixes to AST Handling
 
@@ -540,6 +547,11 @@ features cannot lower the translation-unit ABI level;
 
 - Added parsing and semantic support for `dims` modifier in `num_teams` and
   `thread_limit` clauses for OpenMP 6.1 or later.
+- Map-type-modifying modifiers applied to a list item with a user-defined mapper
+  are now propagated onto the maps the mapper expands to.
+- Mapping of expressions with base-pointers through a user-defined mapper (e.g.
+  `map(s.p[0:n])`) now conforms to OpenMP's conditional pointer-attachment,
+  matching the behavior of such maps outside a mapper.
 
 ### SYCL Support
 
