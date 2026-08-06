@@ -71,9 +71,16 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
   // in ASCII but does not produce ASCII bytes, and is diagnosed.
   auto isExemptLiteral = stringLiteral(isAsciiOnly());
 
-  // The argument shape every matcher below diagnoses: string-like, and not
-  // an exempt literal.
+  // The operators below never construct a path -- they take the literal
+  // through a templated Source overload -- so a literal argument to them is
+  // only ever seen there: exempt the ASCII ones and diagnose the rest.
   auto isDiagnosedStringArg = expr(isPathStringArg, unless(isExemptLiteral));
+
+  // Constructions from a literal, on the other hand, are all handled by the
+  // literal matcher further down, which sees implicit conversions the two
+  // construction matchers cannot. Excluding every literal here keeps the two
+  // from both reporting the same construction.
+  auto isDiagnosedStringObject = expr(isPathStringArg, unless(stringLiteral()));
 
   // TK_IgnoreUnlessSpelledInSource restricts matching to constructions the
   // user actually wrote (e.g. `path p(str)`, `path{str}`, or `path(str)`). It
@@ -86,7 +93,8 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
                cxxConstructExpr(
                    hasDeclaration(cxxConstructorDecl(
                        ofClass(hasName("std::filesystem::path")))),
-                   hasArgument(0, ignoringParenImpCasts(isDiagnosedStringArg)))
+                   hasArgument(0,
+                               ignoringParenImpCasts(isDiagnosedStringObject)))
                    .bind("pathCtor")),
       this);
 
@@ -99,8 +107,102 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
       traverse(TK_IgnoreUnlessSpelledInSource,
                varDecl(hasType(cxxRecordDecl(hasName("std::filesystem::path"))),
-                       hasInitializer(isDiagnosedStringArg))
+                       hasInitializer(isDiagnosedStringObject))
                    .bind("pathVar")),
+      this);
+
+  // Everywhere else a literal becomes a path, the conversion is implicit and
+  // so invisible to the two matchers above: an element of a `vector<path>`
+  // initializer list, an argument to a path-taking function, a `return` in a
+  // path-returning function, a default member initializer. Those all do
+  // produce a path construction, just not one spelled in source, so this
+  // matcher uses the default traversal and keys on the literal rather than
+  // on the construction.
+  //
+  // Matching literals only is what makes the default traversal safe here.
+  // The implicit conversions the spelled-in-source matchers deliberately
+  // hide are the ones the caller cannot address -- an existing std::string
+  // reaching a path parameter -- whereas a literal is always fixable in
+  // place by spelling it u8"...". ASCII literals are exempt as everywhere
+  // else, so what remains is exactly the encoding-dependent case.
+  //
+  // Template instantiations are skipped so a literal in a function template
+  // is reported once, against the pattern, rather than once per
+  // instantiation.
+  Finder->addMatcher(
+      cxxConstructExpr(
+          hasDeclaration(
+              cxxConstructorDecl(ofClass(hasName("std::filesystem::path")))),
+          hasArgument(0, ignoringParenImpCasts(
+                             stringLiteral(unless(isAsciiOnly()))
+                                 .bind("pathLiteral"))),
+          unless(isInTemplateInstantiation())),
+      this);
+
+  // The matcher above sees a construction only where the literal is an
+  // argument to path's own constructor. That relationship is broken when the
+  // literal is handed to a perfect-forwarding template instead: in
+  // `v.emplace_back("x")` or `map<path, int> m = {{"k", 1}}` the path is
+  // built deep inside the container or inside std::pair, from a forwarded
+  // parameter, and the literal never appears as an argument to a path
+  // constructor anywhere the check can see. The three matchers below
+  // recognise the forwarding idioms themselves.
+  auto isNonAsciiLiteral = stringLiteral(unless(isAsciiOnly()));
+  auto refersToPath =
+      refersToType(hasDeclaration(cxxRecordDecl(hasName("std::filesystem::path"))));
+
+  // A container whose element type mentions path -- vector<path>,
+  // set<path>, map<path, V>, map<K, path> -- receiving a literal through one
+  // of the emplace entry points. Which forwarded argument becomes the path
+  // is not recoverable from the AST, so this looks for a path anywhere in
+  // the container's template arguments and a literal in any argument. That
+  // is deliberately approximate: `map<path, string>` taking a non-ASCII
+  // literal as a *value* is reported too. Only non-ASCII literals reach
+  // here, which keeps the over-reporting rare, and the fix suggested for a
+  // genuinely-a-string argument is harmless.
+  Finder->addMatcher(
+      cxxMemberCallExpr(
+          callee(cxxMethodDecl(hasAnyName("emplace", "emplace_back",
+                                          "emplace_front", "emplace_hint"))),
+          on(expr(hasType(hasUnqualifiedDesugaredType(recordType(hasDeclaration(
+              classTemplateSpecializationDecl(
+                  hasAnyTemplateArgument(refersToPath)))))))),
+          hasAnyArgument(
+              ignoringParenImpCasts(isNonAsciiLiteral.bind("forwardedLiteral"))),
+          unless(isInTemplateInstantiation())),
+      this);
+
+  // std::pair construction, which covers the brace-initialized forms that
+  // reach a path container: `map<path, int> m = {{"k", 1}}`, `m.insert({"k",
+  // 1})`, and a directly declared `pair<path, int>`. Unlike emplace, a
+  // pair's arguments line up positionally with its template arguments, so
+  // this matches the literal against the element that is actually the path.
+  Finder->addMatcher(
+      cxxConstructExpr(
+          hasType(hasUnqualifiedDesugaredType(recordType(
+              hasDeclaration(classTemplateSpecializationDecl(hasName("std::pair")))))),
+          anyOf(allOf(hasType(hasUnqualifiedDesugaredType(
+                          recordType(hasDeclaration(classTemplateSpecializationDecl(
+                              hasTemplateArgument(0, refersToPath)))))),
+                      hasArgument(0, ignoringParenImpCasts(
+                                         isNonAsciiLiteral.bind("pathLiteral")))),
+                allOf(hasType(hasUnqualifiedDesugaredType(
+                          recordType(hasDeclaration(classTemplateSpecializationDecl(
+                              hasTemplateArgument(1, refersToPath)))))),
+                      hasArgument(1, ignoringParenImpCasts(
+                                         isNonAsciiLiteral.bind("pathLiteral"))))),
+          unless(isInTemplateInstantiation())),
+      this);
+
+  // std::make_unique<path>(...) / std::make_shared<path>(...), where the
+  // explicit template argument makes the target type unambiguous.
+  Finder->addMatcher(
+      callExpr(callee(functionDecl(
+                   hasAnyName("::std::make_unique", "::std::make_shared"),
+                   hasTemplateArgument(0, refersToPath))),
+               hasAnyArgument(
+                   ignoringParenImpCasts(isNonAsciiLiteral.bind("pathLiteral"))),
+               unless(isInTemplateInstantiation())),
       this);
 
   // path's mutating operators (`/=`, `+=`, `=`) each have a templated
@@ -165,6 +267,25 @@ void FilesystemPathCheck::check(const MatchFinder::MatchResult &Result) {
          "Do not construct std::filesystem::path from a std::string, "
          "std::string_view, or char pointer. Use "
          "core::filesystem::PathFromString or a u8 string literal");
+    return;
+  }
+
+  if (const auto *lit =
+          Result.Nodes.getNodeAs<StringLiteral>("pathLiteral")) {
+    diag(lit->getBeginLoc(),
+         "Do not construct std::filesystem::path from a non-ASCII string "
+         "literal, whose bytes depend on the encoding of this source file. "
+         "Use core::filesystem::PathFromString or a u8 string literal");
+    return;
+  }
+
+  if (const auto *lit =
+          Result.Nodes.getNodeAs<StringLiteral>("forwardedLiteral")) {
+    diag(lit->getBeginLoc(),
+         "Do not pass a non-ASCII string literal to a container of "
+         "std::filesystem::path, whose bytes depend on the encoding of this "
+         "source file. Use core::filesystem::PathFromString or a u8 string "
+         "literal");
     return;
   }
 
