@@ -13,6 +13,20 @@ using namespace clang::ast_matchers;
 
 namespace clang::tidy::cathexis {
 
+namespace {
+
+// A narrow (`char`) string literal whose contents are entirely ASCII. The
+// literal's bytes are known here, at analysis time, so no runtime check is
+// involved. Narrow literals are the only kind reachable from the matchers
+// below -- `u8"..."` is `char8_t` in C++20 and so never satisfies the
+// string-like argument constraint -- but the char width is still verified
+// because getString() requires a single-byte encoding.
+AST_MATCHER(StringLiteral, isAsciiOnly) {
+  return Node.getCharByteWidth() == 1 && !Node.containsNonAscii();
+}
+
+} // namespace
+
 void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
       cxxMemberCallExpr(
@@ -47,6 +61,20 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
       hasType(arrayType(hasElementType(
           qualType(anyOf(asString("char"), asString("const char")))))));
 
+  // A pure-ASCII narrow literal is exempt everywhere: `path p("/etc")` and
+  // `p /= "subdir"` are idiomatic and carry no encoding hazard, because the
+  // literal's bytes are known here and are identical under every source
+  // encoding. A non-ASCII literal is a different matter -- its bytes depend
+  // on the encoding of the source file, which is exactly the ambiguity path
+  // exists to resolve -- so those are still diagnosed. Note that this is
+  // decided by the literal's value, not its spelling: "\xc3\xa9" is written
+  // in ASCII but does not produce ASCII bytes, and is diagnosed.
+  auto isExemptLiteral = stringLiteral(isAsciiOnly());
+
+  // The argument shape every matcher below diagnoses: string-like, and not
+  // an exempt literal.
+  auto isDiagnosedStringArg = expr(isPathStringArg, unless(isExemptLiteral));
+
   // TK_IgnoreUnlessSpelledInSource restricts matching to constructions the
   // user actually wrote (e.g. `path p(str)`, `path{str}`, or `path(str)`). It
   // hides the implicit path conversions the compiler synthesizes during
@@ -58,7 +86,7 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
                cxxConstructExpr(
                    hasDeclaration(cxxConstructorDecl(
                        ofClass(hasName("std::filesystem::path")))),
-                   hasArgument(0, ignoringParenImpCasts(expr(isPathStringArg))))
+                   hasArgument(0, ignoringParenImpCasts(isDiagnosedStringArg)))
                    .bind("pathCtor")),
       this);
 
@@ -71,29 +99,60 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
       traverse(TK_IgnoreUnlessSpelledInSource,
                varDecl(hasType(cxxRecordDecl(hasName("std::filesystem::path"))),
-                       hasInitializer(expr(isPathStringArg)))
+                       hasInitializer(isDiagnosedStringArg))
                    .bind("pathVar")),
+      this);
+
+  // path's mutating operators (`/=`, `+=`, `=`) each have a templated
+  // `Source` overload, so `p /= str` binds directly to
+  // `operator/=(const std::string &)` -- no path is constructed and the
+  // matchers above see nothing. The free `operator/(const path &, const
+  // path &)` does convert, but implicitly, so it is not spelled in source
+  // either. Match the argument instead of the construction.
+  //
+  // Argument 0 is the left operand in both shapes (the object for a member
+  // operator, the lhs for the free `operator/`), so requiring it to be a
+  // path is what scopes this to filesystem operators; argument 1 is the
+  // right operand in both.
+  Finder->addMatcher(
+      traverse(TK_IgnoreUnlessSpelledInSource,
+               cxxOperatorCallExpr(
+                   hasAnyOverloadedOperatorName("/=", "+=", "/", "="),
+                   hasArgument(0, expr(hasType(cxxRecordDecl(
+                                      hasName("std::filesystem::path"))))),
+                   hasArgument(1, ignoringParenImpCasts(isDiagnosedStringArg)))
+                   .bind("pathOp")),
+      this);
+
+  // The named equivalents of the operators above, which take the same
+  // templated `Source` argument.
+  Finder->addMatcher(
+      traverse(TK_IgnoreUnlessSpelledInSource,
+               cxxMemberCallExpr(
+                   callee(cxxMethodDecl(
+                       ofClass(hasName("std::filesystem::path")),
+                       hasAnyName("append", "concat", "assign",
+                                  "replace_filename", "replace_extension"))),
+                   hasArgument(0, ignoringParenImpCasts(isDiagnosedStringArg)))
+                   .bind("pathMemberOp")),
       this);
 }
 
 void FilesystemPathCheck::check(const MatchFinder::MatchResult &Result) {
-  if (const auto *call = Result.Nodes.getNodeAs<CallExpr>("call");
-      call != nullptr) {
-    diag(call->getBeginLoc(), "Do not use std::filesystem::path::string");
+  if (const auto *call = Result.Nodes.getNodeAs<CallExpr>("call")) {
+    diag(call->getBeginLoc(), "Do not use std::filesystem::path::string()");
     return;
   }
 
   if (const auto *conv =
-          Result.Nodes.getNodeAs<CXXMemberCallExpr>("pathToString");
-      conv != nullptr) {
+          Result.Nodes.getNodeAs<CXXMemberCallExpr>("pathToString")) {
     diag(conv->getBeginLoc(),
          "Avoid implicit conversion of std::filesystem::path to std::string. "
          "This will not build on all platforms");
     return;
   }
 
-  if (const auto *ctor = Result.Nodes.getNodeAs<CXXConstructExpr>("pathCtor");
-      ctor != nullptr) {
+  if (const auto *ctor = Result.Nodes.getNodeAs<CXXConstructExpr>("pathCtor")) {
     diag(ctor->getBeginLoc(),
          "Do not construct std::filesystem::path from a std::string, "
          "std::string_view, or char pointer. Use "
@@ -101,12 +160,28 @@ void FilesystemPathCheck::check(const MatchFinder::MatchResult &Result) {
     return;
   }
 
-  if (const auto *var = Result.Nodes.getNodeAs<VarDecl>("pathVar");
-      var != nullptr) {
+  if (const auto *var = Result.Nodes.getNodeAs<VarDecl>("pathVar")) {
     diag(var->getBeginLoc(),
          "Do not construct std::filesystem::path from a std::string, "
          "std::string_view, or char pointer. Use "
          "core::filesystem::PathFromString or a u8 string literal");
+    return;
+  }
+
+  if (const auto *op = Result.Nodes.getNodeAs<CXXOperatorCallExpr>("pathOp")) {
+    diag(op->getOperatorLoc(),
+         "Do not combine std::filesystem::path with a std::string, "
+         "std::string_view, or char pointer via '%0'")
+        << getOperatorSpelling(op->getOperator());
+    return;
+  }
+
+  if (const auto *call =
+          Result.Nodes.getNodeAs<CXXMemberCallExpr>("pathMemberOp")) {
+    diag(call->getExprLoc(),
+         "Do not combine std::filesystem::path with a std::string, "
+         "std::string_view, or char pointer via '%0'")
+        << call->getMethodDecl()->getName();
   }
 }
 
