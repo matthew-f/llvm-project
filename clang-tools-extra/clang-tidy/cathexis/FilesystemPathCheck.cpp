@@ -15,14 +15,30 @@ namespace clang::tidy::cathexis {
 
 namespace {
 
-// A narrow (`char`) string literal whose contents are entirely ASCII. The
-// literal's bytes are known here, at analysis time, so no runtime check is
-// involved. Narrow literals are the only kind reachable from the matchers
-// below -- `u8"..."` is `char8_t` in C++20 and so never satisfies the
-// string-like argument constraint -- but the char width is still verified
-// because getString() requires a single-byte encoding.
-AST_MATCHER(StringLiteral, isAsciiOnly) {
-  return Node.getCharByteWidth() == 1 && !Node.containsNonAscii();
+// A string literal that converts to a path unambiguously, and so needs no
+// diagnostic. Two kinds qualify.
+//
+// First, `u8"..."`, which is the spelling the diagnostics below recommend
+// and so must never itself be diagnosed. It is the only literal kind exempt
+// on the strength of its kind alone: `L"..."`, `u"..."` and `U"..."` do
+// carry an encoding in their type, but they are not the spelling this code
+// base wants, so a non-ASCII one is still reported.
+//
+// Second, a literal of any kind whose characters are all ASCII, which is
+// identical under every source encoding. That leaves exactly one thing
+// diagnosed: a non-u8 literal carrying non-ASCII characters.
+//
+// The literal's contents are known here, at analysis time, so no runtime
+// check is involved. This reads them through getCodeUnit() rather than
+// containsNonAscii(), whose getString() requires a single-byte encoding and
+// would assert on the wide and UTF-16/32 literals now reaching this point.
+AST_MATCHER(StringLiteral, hasWellDefinedEncoding) {
+  if (Node.isUTF8())
+    return true;
+  for (unsigned I = 0, N = Node.getLength(); I != N; ++I)
+    if (Node.getCodeUnit(I) > 0x7F)
+      return false;
+  return true;
 }
 
 } // namespace
@@ -61,19 +77,17 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
       hasType(arrayType(hasElementType(
           qualType(anyOf(asString("char"), asString("const char")))))));
 
-  // A pure-ASCII narrow literal is exempt everywhere: `path p("/etc")` and
-  // `p /= "subdir"` are idiomatic and carry no encoding hazard, because the
-  // literal's bytes are known here and are identical under every source
-  // encoding. A non-ASCII literal is a different matter -- its bytes depend
-  // on the encoding of the source file, which is exactly the ambiguity path
-  // exists to resolve -- so those are still diagnosed. Note that this is
-  // decided by the literal's value, not its spelling: "\xc3\xa9" is written
-  // in ASCII but does not produce ASCII bytes, and is diagnosed.
-  auto isExemptLiteral = stringLiteral(isAsciiOnly());
+  // Literals with a well-defined encoding are exempt everywhere: `path
+  // p("/etc")` and `p /= "subdir"` are idiomatic and carry no hazard, and
+  // `dir / u8"sun-*.bin"` is the very thing the diagnostics recommend.
+  // Note that an ordinary literal is judged by its value, not its spelling:
+  // "\xc3\xa9" is written in ASCII but does not produce ASCII bytes, and is
+  // diagnosed.
+  auto isExemptLiteral = stringLiteral(hasWellDefinedEncoding());
 
   // The operators below never construct a path -- they take the literal
   // through a templated Source overload -- so a literal argument to them is
-  // only ever seen there: exempt the ASCII ones and diagnose the rest.
+  // only ever seen there: exempt the well-defined ones, diagnose the rest.
   auto isDiagnosedStringArg = expr(isPathStringArg, unless(isExemptLiteral));
 
   // Constructions from a literal, on the other hand, are all handled by the
@@ -123,8 +137,10 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
   // The implicit conversions the spelled-in-source matchers deliberately
   // hide are the ones the caller cannot address -- an existing std::string
   // reaching a path parameter -- whereas a literal is always fixable in
-  // place by spelling it u8"...". ASCII literals are exempt as everywhere
-  // else, so what remains is exactly the encoding-dependent case.
+  // place by spelling it u8"...". Literals with a well-defined encoding are
+  // exempt as everywhere else -- which is what keeps that recommended fix
+  // from tripping the check itself -- so what remains is exactly the
+  // encoding-dependent case.
   //
   // Template instantiations are skipped so a literal in a function template
   // is reported once, against the pattern, rather than once per
@@ -134,7 +150,7 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
           hasDeclaration(
               cxxConstructorDecl(ofClass(hasName("std::filesystem::path")))),
           hasArgument(0, ignoringParenImpCasts(
-                             stringLiteral(unless(isAsciiOnly()))
+                             stringLiteral(unless(hasWellDefinedEncoding()))
                                  .bind("pathLiteral"))),
           unless(isInTemplateInstantiation())),
       this);
@@ -147,7 +163,7 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
   // parameter, and the literal never appears as an argument to a path
   // constructor anywhere the check can see. The three matchers below
   // recognise the forwarding idioms themselves.
-  auto isNonAsciiLiteral = stringLiteral(unless(isAsciiOnly()));
+  auto isNonAsciiLiteral = stringLiteral(unless(hasWellDefinedEncoding()));
   auto refersToPath =
       refersToType(hasDeclaration(cxxRecordDecl(hasName("std::filesystem::path"))));
 
@@ -207,22 +223,37 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
 
   // path's mutating operators (`/=`, `+=`, `=`) each have a templated
   // `Source` overload, so `p /= str` binds directly to
-  // `operator/=(const std::string &)` -- no path is constructed and the
-  // matchers above see nothing. The free `operator/(const path &, const
-  // path &)` does convert, but implicitly, so it is not spelled in source
-  // either. Match the argument instead of the construction.
-  //
-  // Argument 0 is the left operand in both shapes (the object for a member
-  // operator, the lhs for the free `operator/`), so requiring it to be a
-  // path is what scopes this to filesystem operators; argument 1 is the
-  // right operand in both.
+  // `operator/=(const std::string &)`. No path is constructed, which means
+  // the construction matchers above see nothing at all -- including for a
+  // literal argument -- so this matcher owns every argument shape.
   Finder->addMatcher(
       traverse(TK_IgnoreUnlessSpelledInSource,
                cxxOperatorCallExpr(
-                   hasAnyOverloadedOperatorName("/=", "+=", "/", "="),
+                   hasAnyOverloadedOperatorName("/=", "+=", "="),
+                   callee(cxxMethodDecl(
+                       ofClass(hasName("std::filesystem::path")))),
+                   hasArgument(1, ignoringParenImpCasts(isDiagnosedStringArg)))
+                   .bind("pathOp")),
+      this);
+
+  // The free `operator/(const path &, const path &)` is the opposite case:
+  // it takes a path, so the right operand really is converted, just
+  // implicitly. A literal operand therefore produces a path construction
+  // that the literal matcher above already reports, and matching literals
+  // here too would diagnose `dir / "a/<non-ascii>"` twice. Hence
+  // isDiagnosedStringObject, which excludes literals, rather than
+  // isDiagnosedStringArg.
+  //
+  // Argument 0 is the left operand and argument 1 the right, as for the
+  // member operators above, because the object counts as argument 0 there.
+  Finder->addMatcher(
+      traverse(TK_IgnoreUnlessSpelledInSource,
+               cxxOperatorCallExpr(
+                   hasOverloadedOperatorName("/"),
                    hasArgument(0, expr(hasType(cxxRecordDecl(
                                       hasName("std::filesystem::path"))))),
-                   hasArgument(1, ignoringParenImpCasts(isDiagnosedStringArg)))
+                   hasArgument(
+                       1, ignoringParenImpCasts(isDiagnosedStringObject)))
                    .bind("pathOp")),
       this);
 
