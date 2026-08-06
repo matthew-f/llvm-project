@@ -23,31 +23,33 @@ enum class CaseType {
   Upper,
   Lower,
   Camel,
+  Snake,
 };
 
 static CaseType GetCaseType(std::string_view in) {
   bool contains_upper = false;
   bool contains_lower = false;
+  bool contains_underscore = false;
 
   for (char c : in) {
-
-    if (c >= 'a' && c <= 'z') {
+    if (c >= 'a' && c <= 'z')
       contains_lower = true;
-    }
 
-    if (c >= 'A' && c <= 'Z') {
+    if (c >= 'A' && c <= 'Z')
       contains_upper = true;
-    }
+
+    if (c == '_')
+      contains_underscore = true;
   }
 
-  if (contains_upper && !contains_lower) {
+  if (contains_upper && !contains_lower)
     return CaseType::Upper;
-  }
 
   if (contains_lower && !contains_upper) {
+    if (contains_underscore)
+      return CaseType::Snake;
     return CaseType::Lower;
   }
-
   // what about with just numbers? is that possible?
   return CaseType::Camel;
 }
@@ -60,6 +62,28 @@ static std::string ToUpper(std::string s) {
 }
 
 //----------------------------------------------------------------------//
+static bool IsVariableALambda(const clang::VarDecl *v) {
+  if (v == nullptr)
+    return false;
+
+  // 1. Get the type of the variable
+  QualType t = v->getType();
+
+  // 2. Unwrap references if the lambda is bound to a reference (e.g., auto&
+  // func = []{};)
+  if (t->isReferenceType())
+    t = t.getNonReferenceType();
+
+  // 3. Extract the underlying C++ record (class/struct) declaration
+  if (const clang::CXXRecordDecl *r = t->getAsCXXRecordDecl(); r != nullptr) {
+    // 4. Check if this record is a compiler-generated lambda closure type
+    return r->isLambda();
+  }
+
+  return false;
+}
+
+//----------------------------------------------------------------------//
 NamingConventionsCheck::NamingConventionsCheck(StringRef Name,
                                                ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
@@ -69,7 +93,6 @@ NamingConventionsCheck::NamingConventionsCheck(StringRef Name,
       AllowStorageException(Options.get("AllowStorageException", false)),
       AllowCapitalisedLOGStatics(
           Options.get("AllowCapitalisedLOGStatics", false)) {
-
   for (const auto &ref :
        utils::options::parseStringList(Options.get("ExceptRecordNames", ""))) {
     ExceptRecordNames.emplace_back(ref);
@@ -83,7 +106,6 @@ NamingConventionsCheck::NamingConventionsCheck(StringRef Name,
 
 //----------------------------------------------------------------------//
 void NamingConventionsCheck::registerMatchers(MatchFinder *Finder) {
-
   // Functions
   Finder->addMatcher(
       functionDecl(
@@ -157,7 +179,7 @@ void NamingConventionsCheck::registerMatchers(MatchFinder *Finder) {
   // Fields (members of class/union/struct)
   Finder->addMatcher(fieldDecl().bind("field"), this);
 
-  // Variables (variable declaration not that is not a field)
+  // Variables (variable declaration not is not a field)
   if (CheckRangeBasedForLoops) {
     Finder->addMatcher(varDecl().bind("var"), this);
   } else {
@@ -173,10 +195,11 @@ void NamingConventionsCheck::registerMatchers(MatchFinder *Finder) {
 
 //----------------------------------------------------------------------//
 void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
-
   const auto Func = Result.Nodes.getNodeAs<FunctionDecl>("func");
   if (Func) {
-    if (!Func->isMain() && !Func->isOverloadedOperator()) {
+    if (!Func->isMain() &&               //
+        !Func->isOverloadedOperator() && //
+        !llvm::isa<CXXDeductionGuideDecl>(Func)) {
       std::string name = Func->getNameInfo().getName().getAsString();
 
       if (name[0] < 'A' || name[0] > 'Z') {
@@ -199,19 +222,48 @@ void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
 
   const auto Method = Result.Nodes.getNodeAs<FunctionDecl>("method");
   if (Method) {
+    if (!Method->isFirstDecl())
+      return;
+
     std::string name = Method->getNameInfo().getName().getAsString();
 
-    if ((name[0] < 'a' || name[0] > 'z') &&
+    if ((name[0] < 'a' || name[0] > 'z') && //
         !(name.size() > 2 && name.substr(0, 2) == "__")) {
-
       diag(Method->getNameInfo().getLoc(),
            "Member function '%0' should not start with a capital letter")
           << name;
     }
 
+    if (GetCaseType(name) == CaseType::Snake &&
+        //
+        name != "__invoke" &&
+        // coroutines
+        name != "final_suspend" &&       //
+        name != "get_return_object" &&   //
+        name != "initial_suspend" &&     //
+        name != "return_value" &&        //
+        name != "return_void" &&         //
+        name != "unhandled_exception" && //
+        name != "yield_value" &&         //
+        // absl hash
+        name != "combine_contiguous" &&           //
+        name != "combine_raw" &&                  //
+        name != "combine_weakly_mixed_integer" && //
+        // cathexies
+        name != "push_back" &&    //
+        name != "push_front" &&   //
+        name != "pop_back" &&     //
+        name != "pop_front" &&    //
+        name != "emplace_back" && //
+        name != "c_str" &&        //
+        !StringRef(name).starts_with("operator ")) {
+      diag(Method->getNameInfo().getLoc(),
+           "Member function '%0' should be camel-case, not snake-case")
+          << name;
+    }
+
     // NOLINTNEXTLINE(cathexis-core-bad-spelling)
     if (containsColour(name)) {
-
       diag(Method->getNameInfo().getLoc(),
            // NOLINTNEXTLINE(cathexis-core-bad-spelling)
            "Member function '%0' should use 'color' instead of 'colour'")
@@ -226,26 +278,23 @@ void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
     std::string name = Record->getNameAsString();
 
     if (!name.empty() && (name[0] < 'A' || name[0] > 'Z')) {
-
       auto match = std::find(ExceptRecordNames.begin(), ExceptRecordNames.end(),
                              Record->getQualifiedNameAsString());
 
-      if (match != ExceptRecordNames.end()) {
+      if (match != ExceptRecordNames.end())
         return;
-      }
 
       // std::cout << "name=" << name << "\n";
 
       std::string type;
-      if (Record->isStruct()) {
+      if (Record->isStruct())
         type = "struct";
-      } else if (Record->isClass()) {
+      else if (Record->isClass())
         type = "class";
-      } else if (Record->isUnion()) {
+      else if (Record->isUnion())
         type = "union";
-      } else {
+      else
         type = "??";
-      }
       diag(Record->getLocation(), "%0 '%1' should be capitalised (%2)")
           << type << name << Record->getQualifiedNameAsString();
     }
@@ -255,11 +304,9 @@ void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
 
   const auto field = Result.Nodes.getNodeAs<FieldDecl>("field");
   if (field != nullptr) {
-
     if (field->isAnonymousStructOrUnion()) {
       // fine
     } else {
-
       std::string warning;
       if (!isValidFieldName(&warning, field)) {
         diag(field->getLocation(), "'%0' %1")
@@ -272,11 +319,9 @@ void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
 
   const auto var = Result.Nodes.getNodeAs<VarDecl>("var");
   if (var != nullptr) {
-
     std::string warning;
-    if (!isValidVarName(&warning, var)) {
+    if (!isValidVarName(&warning, var))
       diag(var->getLocation(), "'%0' %1") << var->getNameAsString() << warning;
-    }
 
     return;
   }
@@ -319,18 +364,15 @@ static std::size_t ReplaceAll(std::string &inout, std::string_view what,
 bool NamingConventionsCheck::isValidDeclaratorDecl(
     std::string *warning, DeclaratorDeclError *error,
     const DeclaratorDecl *dec) const {
-
   std::string name = dec->getNameAsString();
 
   std::string lc_name;
   lc_name.reserve(name.size());
-  for (char c : name) {
-    if (c >= 'A' && c <= 'Z') {
+  for (char c : name)
+    if (c >= 'A' && c <= 'Z')
       lc_name += ('a' + c - 'A');
-    } else {
+    else
       lc_name += c;
-    }
-  }
 
   // NOLINTBEGIN(cathexis-core-bad-spelling)
   if (containsColour(lc_name)) {
@@ -343,9 +385,8 @@ bool NamingConventionsCheck::isValidDeclaratorDecl(
   for (const auto &s : ValidUnits) {
     ReplaceAll(name, std::string("_") + s, "");
 
-    if (std::string_view(name).substr(0, s.size()) == s) {
+    if (std::string_view(name).substr(0, s.size()) == s)
       name.erase(0, s.size());
-    }
   }
 
   for (const auto &s : InvalidUnits) {
@@ -380,31 +421,27 @@ bool NamingConventionsCheck::isValidDeclaratorDecl(
 bool NamingConventionsCheck::isValidFieldName(std::string *warning,
                                               const FieldDecl *field) const {
   std::string name = field->getNameAsString();
-  if (name.empty()) {
+  if (name.empty())
     return true;
-  }
 
   std::string prefix = name.substr(0, 2);
 
   if (field->getAccess() == AS_private) {
-
     if (prefix != "d_" && prefix != "d") {
       *warning = "is a private class/struct member and should start with 'd_'";
       return false;
     }
-  } else {
+  } else
 
-    if (prefix == "d_") {
-      *warning =
-          "is a not private class/struct member and should not start with 'd_'";
-      return false;
-    }
+      if (prefix == "d_") {
+    *warning =
+        "is a not private class/struct member and should not start with 'd_'";
+    return false;
   }
 
   DeclaratorDeclError error;
-  if (isValidDeclaratorDecl(warning, &error, field)) {
+  if (isValidDeclaratorDecl(warning, &error, field))
     return true;
-  }
 
   return (error == DeclaratorDeclError::CamelCase &&
           std::find(AllowCamelCaseFields.begin(), AllowCamelCaseFields.end(),
@@ -416,13 +453,11 @@ bool NamingConventionsCheck::isValidFieldName(std::string *warning,
 bool NamingConventionsCheck::isValidConstexprStaticConstVar(
     const std::string &name, const std::string &prefix,
     const VarDecl *var) const {
-
   // assert prefix matches name
   // assert constexpr/static const
 
-  if (prefix.size() < 2) {
+  if (prefix.size() < 2)
     return false;
-  }
 
   char p0 = prefix[0];
   char p1 = prefix[1];
@@ -432,18 +467,15 @@ bool NamingConventionsCheck::isValidConstexprStaticConstVar(
     return true;
   }
 
-  if (AllowUpperCaseConst && GetCaseType(name) == CaseType::Upper) {
+  if (AllowUpperCaseConst && GetCaseType(name) == CaseType::Upper)
     return true;
-  }
 
   if (AllowCoreEnumException && prefix == "e_") {
-
     const auto *cxx = var->getType().getTypePtr()->getAsCXXRecordDecl();
 
     if (cxx != nullptr) {
-      if (cxx->getQualifiedNameAsString() == "core::Enum") {
+      if (cxx->getQualifiedNameAsString() == "core::Enum")
         return true;
-      }
     }
   }
 
@@ -453,7 +485,6 @@ bool NamingConventionsCheck::isValidConstexprStaticConstVar(
 //----------------------------------------------------------------------//
 bool NamingConventionsCheck::isValidVarName(std::string *warning,
                                             const VarDecl *var) const {
-
   std::string name = var->getNameAsString();
 
   if (name.empty()) {
@@ -462,13 +493,22 @@ bool NamingConventionsCheck::isValidVarName(std::string *warning,
   }
 
   if (name[0] == '_') {
-
     if (name == "__promise" && StringRef(var->getType().getAsString())
                                    .starts_with("std::coroutine_traits")) {
       // ignore
     } else {
       *warning = "avoid leading '_' as it is reserved in some circumstances";
       return false;
+    }
+  }
+
+  if (IsVariableALambda(var)) {
+    auto case_type = GetCaseType(name);
+    if (case_type == CaseType::Lower ||
+        (case_type == CaseType::Camel && name.front() >= 'a' &&
+         name.front() <= 'z')) {
+      // lower-case, or camel-case not starting with capital
+      return true;
     }
   }
 
@@ -483,9 +523,7 @@ bool NamingConventionsCheck::isValidVarName(std::string *warning,
   bool allow_upper_case = false;
 
   if (is_constexpr || (is_const && var->getStorageDuration() == SD_Static)) {
-
     if (!isValidConstexprStaticConstVar(name, prefix, var)) {
-
       if (is_constexpr) {
         *warning = "is a constexpr and should start with 'k{A-Z}'";
       } else {
@@ -497,16 +535,13 @@ bool NamingConventionsCheck::isValidVarName(std::string *warning,
       return false;
     }
 
-    if (AllowUpperCaseConst) {
+    if (AllowUpperCaseConst)
       allow_upper_case = true;
-    }
 
     expect_camel_case = true;
 
   } else if (var->getStorageDuration() == SD_Static) {
-
     if (prefix != "s_") {
-
       if (AllowCapitalisedLOGStatics && name.substr(0, 4) == "LOG_") {
         allow_upper_case = true;
       } else {
@@ -515,13 +550,11 @@ bool NamingConventionsCheck::isValidVarName(std::string *warning,
       }
     }
   } else if (var->getStorageDuration() == SD_Thread) {
-
     if (prefix != "t_") {
       *warning = "has thread storage duration and should start with 't_'";
       return false;
     }
   } else {
-
     if (prefix == "d_") {
       *warning = "is a not private class/struct member and should not start "
                  "with 'd_'";
@@ -544,17 +577,14 @@ bool NamingConventionsCheck::isValidVarName(std::string *warning,
   }
 
   DeclaratorDeclError error;
-  if (isValidDeclaratorDecl(warning, &error, var)) {
+  if (isValidDeclaratorDecl(warning, &error, var))
     return true;
-  }
 
-  if (error == DeclaratorDeclError::CamelCase && expect_camel_case) {
+  if (error == DeclaratorDeclError::CamelCase && expect_camel_case)
     return true;
-  }
 
-  if (error == DeclaratorDeclError::UpperCase && allow_upper_case) {
+  if (error == DeclaratorDeclError::UpperCase && allow_upper_case)
     return true;
-  }
 
   return false;
 }
