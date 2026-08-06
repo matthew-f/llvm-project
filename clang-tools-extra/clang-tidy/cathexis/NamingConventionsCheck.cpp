@@ -197,7 +197,8 @@ void NamingConventionsCheck::registerMatchers(MatchFinder *Finder) {
 void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
   const auto Func = Result.Nodes.getNodeAs<FunctionDecl>("func");
   if (Func) {
-    if (!Func->isMain() &&               //
+    if (Func->isFirstDecl() &&           //
+        !Func->isMain() &&               //
         !Func->isOverloadedOperator() && //
         !llvm::isa<CXXDeductionGuideDecl>(Func)) {
       std::string name = Func->getNameInfo().getName().getAsString();
@@ -205,6 +206,12 @@ void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
       if (name[0] < 'A' || name[0] > 'Z') {
         diag(Func->getNameInfo().getLoc(),
              "Global function '%0' should start with a capital letter")
+            << name;
+      }
+
+      if (GetCaseType(name) == CaseType::Snake) {
+        diag(Func->getNameInfo().getLoc(),
+             "Global function '%0' should be camel-case, not snake-case")
             << name;
       }
 
