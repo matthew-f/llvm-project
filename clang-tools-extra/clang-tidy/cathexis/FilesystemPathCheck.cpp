@@ -96,33 +96,30 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
   // from both reporting the same construction.
   auto isDiagnosedStringObject = expr(isPathStringArg, unless(stringLiteral()));
 
-  // TK_IgnoreUnlessSpelledInSource restricts matching to constructions the
-  // user actually wrote (e.g. `path p(str)`, `path{str}`, or `path(str)`). It
-  // hides the implicit path conversions the compiler synthesizes during
-  // overload resolution -- for example when a call like `Exists(str)` resolves
-  // to a path-taking overload instead of a string-taking wrapper -- which are
-  // not something the caller can address at the call site.
+  // Every construction of a path from a string object, however it is
+  // spelled. The default traversal is what makes this one matcher enough:
+  // `path p(str)`, `path p = str` and `path p{str}` all reduce to the same
+  // construction node, as do the conversions the compiler synthesizes and
+  // never writes down -- `Func(str)` resolving to a path parameter, `return
+  // str;` from a path-returning function, `vector<path> v = {str}`, a member
+  // initializer `m(str)`.
+  //
+  // Those synthesized conversions are the point. They are the ones most
+  // worth catching, because nothing at the call site says a path is being
+  // built, and they are fixable exactly where they appear by wrapping the
+  // argument in core::filesystem::PathFromString.
+  //
+  // Literals are excluded here and handled by the matcher below, which
+  // applies the encoding rules they need. Template instantiations are
+  // skipped so a conversion inside a function template is reported once,
+  // against the pattern, rather than once per instantiation.
   Finder->addMatcher(
-      traverse(TK_IgnoreUnlessSpelledInSource,
-               cxxConstructExpr(
-                   hasDeclaration(cxxConstructorDecl(
-                       ofClass(hasName("std::filesystem::path")))),
-                   hasArgument(0,
-                               ignoringParenImpCasts(isDiagnosedStringObject)))
-                   .bind("pathCtor")),
-      this);
-
-  // Copy-initialization (`path p = str;`) is itself an implicit conversion, so
-  // the construction is not spelled in source and the matcher above does not
-  // see it. Match it via the variable instead: a path whose written
-  // initializer is one of the string-like types. Direct- and list-init have a
-  // path-typed initializer (the construction) and so are not matched here,
-  // avoiding duplicate diagnostics.
-  Finder->addMatcher(
-      traverse(TK_IgnoreUnlessSpelledInSource,
-               varDecl(hasType(cxxRecordDecl(hasName("std::filesystem::path"))),
-                       hasInitializer(isDiagnosedStringObject))
-                   .bind("pathVar")),
+      cxxConstructExpr(
+          hasDeclaration(
+              cxxConstructorDecl(ofClass(hasName("std::filesystem::path")))),
+          hasArgument(0, ignoringParenImpCasts(isDiagnosedStringObject)),
+          unless(isInTemplateInstantiation()))
+          .bind("pathCtor"),
       this);
 
   // Everywhere else a literal becomes a path, the conversion is implicit and
@@ -236,36 +233,24 @@ void FilesystemPathCheck::registerMatchers(MatchFinder *Finder) {
                    .bind("pathOp")),
       this);
 
-  // The free `operator/(const path &, const path &)` is the opposite case:
-  // it takes a path, so the right operand really is converted, just
-  // implicitly. A literal operand therefore produces a path construction
-  // that the literal matcher above already reports, and matching literals
-  // here too would diagnose `dir / "a/<non-ascii>"` twice. Hence
-  // isDiagnosedStringObject, which excludes literals, rather than
-  // isDiagnosedStringArg.
-  //
-  // Argument 0 is the left operand and argument 1 the right, as for the
-  // member operators above, because the object counts as argument 0 there.
-  Finder->addMatcher(
-      traverse(TK_IgnoreUnlessSpelledInSource,
-               cxxOperatorCallExpr(
-                   hasOverloadedOperatorName("/"),
-                   hasArgument(0, expr(hasType(cxxRecordDecl(
-                                      hasName("std::filesystem::path"))))),
-                   hasArgument(
-                       1, ignoringParenImpCasts(isDiagnosedStringObject)))
-                   .bind("pathOp")),
-      this);
+  // Note that the free `operator/(const path &, const path &)` needs no
+  // matcher of its own. It takes a path, so `dir / str` really does convert
+  // its right operand, and the two construction matchers above already
+  // report that conversion -- the literal one for `dir / "<non-ascii>"`,
+  // the string one for `dir / str`. Matching it here as well would report
+  // both twice.
 
-  // The named equivalents of the operators above, which take the same
-  // templated `Source` argument.
+  // The named equivalents of the member operators above. Only the ones
+  // taking the same templated `Source` argument belong here, for the same
+  // reason the free `operator/` is absent: replace_filename() and
+  // replace_extension() take a `const path &`, so a string argument to them
+  // is converted, and the construction matchers above report it already.
   Finder->addMatcher(
       traverse(TK_IgnoreUnlessSpelledInSource,
                cxxMemberCallExpr(
                    callee(cxxMethodDecl(
                        ofClass(hasName("std::filesystem::path")),
-                       hasAnyName("append", "concat", "assign",
-                                  "replace_filename", "replace_extension"))),
+                       hasAnyName("append", "concat", "assign"))),
                    hasArgument(0, ignoringParenImpCasts(isDiagnosedStringArg)))
                    .bind("pathMemberOp")),
       this);
@@ -287,14 +272,6 @@ void FilesystemPathCheck::check(const MatchFinder::MatchResult &Result) {
 
   if (const auto *ctor = Result.Nodes.getNodeAs<CXXConstructExpr>("pathCtor")) {
     diag(ctor->getBeginLoc(),
-         "Do not construct std::filesystem::path from a std::string, "
-         "std::string_view, or char pointer. Use "
-         "core::filesystem::PathFromString or a u8 string literal");
-    return;
-  }
-
-  if (const auto *var = Result.Nodes.getNodeAs<VarDecl>("pathVar")) {
-    diag(var->getBeginLoc(),
          "Do not construct std::filesystem::path from a std::string, "
          "std::string_view, or char pointer. Use "
          "core::filesystem::PathFromString or a u8 string literal");

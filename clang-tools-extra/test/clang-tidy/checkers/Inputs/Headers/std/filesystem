@@ -1,0 +1,61 @@
+#ifndef _FILESYSTEM_
+#define _FILESYSTEM_
+
+#include "string"
+
+namespace std {
+namespace filesystem {
+
+// A mock of std::filesystem::path. The split between the overloads taking a
+// templated `Source` and those taking a `const path &` is deliberate and
+// matches the real interface: it decides whether a string argument is
+// converted at the call site or absorbed by a template, which is exactly what
+// checks reasoning about path conversions have to distinguish.
+class path {
+public:
+  typedef char value_type;
+  typedef basic_string<value_type> string_type;
+
+  enum format { native_format, generic_format, auto_format };
+
+  path();
+  path(const path &);
+  path(path &&);
+  path(const string_type &source, format fmt = auto_format);
+  template <class Source>
+  path(const Source &source, format fmt = auto_format);
+
+  path &operator=(const path &);
+  path &operator=(path &&);
+  template <class Source> path &operator=(const Source &source);
+  template <class Source> path &assign(const Source &source);
+
+  path &operator/=(const path &p);
+  template <class Source> path &operator/=(const Source &source);
+  template <class Source> path &append(const Source &source);
+
+  path &operator+=(const path &x);
+  template <class Source> path &operator+=(const Source &x);
+  template <class Source> path &concat(const Source &x);
+
+  path &replace_filename(const path &replacement);
+  path &replace_extension(const path &replacement = path());
+
+  operator string_type() const;
+  string_type string() const;
+
+  const string_type &native() const;
+  const value_type *c_str() const;
+
+  bool empty() const;
+};
+
+path operator/(const path &lhs, const path &rhs);
+
+bool operator==(const path &lhs, const path &rhs);
+bool operator!=(const path &lhs, const path &rhs);
+
+} // namespace filesystem
+} // namespace std
+
+#endif // _FILESYSTEM_
