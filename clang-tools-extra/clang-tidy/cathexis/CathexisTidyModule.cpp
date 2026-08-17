@@ -10,30 +10,29 @@
 
 #include "../ClangTidy.h"
 #include "../ClangTidyModule.h"
-#include "../ClangTidyModuleRegistry.h"
 #include "AbseilWrappersCheck.h"
 #include "BannedCFunctionsCheck.h"
 #include "BugproneBufDataCheck.h"
 #include "CheckedNewCheck.h"
 #include "FilesystemPathCheck.h"
 #include "LogAssertCheck.h"
-#include "NoNewCheck.h"
-#include "QualitySmallHeapAllocationCheck.h"
-#include "QtStringQstringCheck.h"
-#include "QualityLongLambdaCheck.h"
 #include "NamingConventionsCheck.h"
+#include "NdLoggingCheck.h"
+#include "NoNewCheck.h"
 #include "PackedStructMissingSizeCheckCheck.h"
 #include "QtNoDateTimeToStringCheck.h"
 #include "QtNoQfiledialogStaticMethodsCheck.h"
 #include "QtNolatin1Check.h"
+#include "QtStringQstringCheck.h"
 #include "QtTrWithoutQobjectCheck.h"
 #include "QualityContainersCheck.h"
 #include "QualityDeprecatedCheck.h"
 #include "QualityLoggingCheck.h"
-#include "NdLoggingCheck.h"
+#include "QualityLongLambdaCheck.h"
 #include "QualityPackedStructuresCheck.h"
 #include "QualityQtAvoidQdialogExecCheck.h"
 #include "QualityReviewCheck.h"
+#include "QualitySmallHeapAllocationCheck.h"
 #include "QualityUseGbufviewCheck.h"
 #include "QualityUseNodiscardCheck.h"
 #include "QualityXmlSuspiciousFindoraddCheck.h"
@@ -41,7 +40,7 @@
 #include "RefactorXmlConvertFindoraddToUpdateCheck.h"
 #include "RefactorXmlRenameUpdateCheck.h"
 #include "RefactorXmlUseFindoraddCheck.h"
-//#include "StringFindStartswithCheck.h"
+// #include "StringFindStartswithCheck.h"
 #include "QualityEnumToStringCheck.h"
 #include "UseAnonymousDefCheck.h"
 #include "UseDefaultOperatorsCheck.h"
@@ -61,14 +60,11 @@ public:
         "cathexis-banned-c-functions");
     CheckFactories.registerCheck<BugproneBufDataCheck>(
         "cathexis-bugprone-buf-data");
-    CheckFactories.registerCheck<CheckedNewCheck>(
-        "cathexis-checked-new");
+    CheckFactories.registerCheck<CheckedNewCheck>("cathexis-checked-new");
     CheckFactories.registerCheck<FilesystemPathCheck>(
         "cathexis-filesystem-path");
-    CheckFactories.registerCheck<LogAssertCheck>(
-        "cathexis-log-assert");
-    CheckFactories.registerCheck<NoNewCheck>(
-        "cathexis-no-new");
+    CheckFactories.registerCheck<LogAssertCheck>("cathexis-log-assert");
+    CheckFactories.registerCheck<NoNewCheck>("cathexis-no-new");
     CheckFactories.registerCheck<QualitySmallHeapAllocationCheck>(
         "cathexis-quality-small-heap-allocation");
     CheckFactories.registerCheck<QtStringQstringCheck>(
@@ -92,8 +88,7 @@ public:
         "cathexis-quality-deprecated");
     CheckFactories.registerCheck<QualityLoggingCheck>(
         "cathexis-quality-logging");
-    CheckFactories.registerCheck<NdLoggingCheck>(
-        "cathexis-nd-logging");
+    CheckFactories.registerCheck<NdLoggingCheck>("cathexis-nd-logging");
     CheckFactories.registerCheck<QualityPackedStructuresCheck>(
         "cathexis-quality-packed-structures");
     CheckFactories.registerCheck<QualityQtAvoidQdialogExecCheck>(
