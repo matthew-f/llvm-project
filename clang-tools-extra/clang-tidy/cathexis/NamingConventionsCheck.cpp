@@ -245,6 +245,10 @@ void NamingConventionsCheck::check(const MatchFinder::MatchResult &Result) {
         //
         name != "__invoke" &&
         // coroutines
+        name != "await_ready" &&         //
+        name != "await_resume" &&        //
+        name != "await_suspend" &&       //
+        name != "await_transform" &&     //
         name != "final_suspend" &&       //
         name != "get_return_object" &&   //
         name != "initial_suspend" &&     //
